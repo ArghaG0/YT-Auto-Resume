@@ -1,0 +1,28 @@
+{
+  "name": "youtube-auto-resume",
+  "version": "1.0.0",
+  "description": "Manifest V3 browser extension to automatically resume YouTube playback paused by inactivity prompts.",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "package": "node scripts/package.js"
+  },
+  "keywords": [
+    "youtube",
+    "auto-resume",
+    "browser-extension",
+    "manifest-v3",
+    "chromium"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "adm-zip": "^0.5.16",
+    "eslint": "^9.20.0",
+    "jsdom": "^26.0.0",
+    "vitest": "^3.0.5"
+  }
+}
