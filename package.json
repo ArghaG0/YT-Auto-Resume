@@ -19,7 +19,7 @@
     "chromium"
   ],
   "author": "",
-  "license": "MIT",
+  "license": "UNLICENSED",
   "devDependencies": {
     "adm-zip": "^0.5.16",
     "esbuild": "^0.28.2",

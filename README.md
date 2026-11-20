@@ -1,9 +1,8 @@
 # YouTube Auto Resume
 
-[![CI](https://github.com/your-username/youtube-auto-resume/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/youtube-auto-resume/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/your-username/youtube-auto-resume/releases)
+[![CI](https://github.com/ArghaG0/YT-Auto-Resume/actions/workflows/ci.yml/badge.svg)](https://github.com/ArghaG0/YT-Auto-Resume/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/ArghaG0/YT-Auto-Resume/releases)
 [![Manifest V3](https://img.shields.io/badge/manifest-v3-green.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A lightweight, privacy-first **Manifest V3** browser extension that automatically confirms YouTube's inactivity interruption (*"Video paused. Continue watching?"*), keeping background music and long videos playing seamlessly without overriding intentional user pauses.
 
@@ -27,7 +26,7 @@ Distributed directly via **GitHub Releases** for Chromium-based browsers (Chrome
 Because this extension is open-source and distributed via GitHub Releases (not the Chrome Web Store), install it using Chromium's native **Developer Mode**:
 
 ### Step 1: Download & Extract
-1. Go to the [Releases](https://github.com/your-username/youtube-auto-resume/releases) page.
+1. Go to the [Releases](https://github.com/ArghaG0/YT-Auto-Resume/releases) page.
 2. Download the latest `youtube-auto-resume-vX.Y.Z.zip` file.
 3. Extract the ZIP file to a permanent folder on your drive (e.g., `Documents/BrowserExtensions/YouTubeAutoResume`).
 
@@ -79,8 +78,8 @@ For developers who want to contribute or modify the extension:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/youtube-auto-resume.git
-cd youtube-auto-resume
+git clone https://github.com/ArghaG0/YT-Auto-Resume.git
+cd YT-Auto-Resume
 
 # Install dependencies
 npm install
@@ -97,9 +96,3 @@ npm run lint
 # Package clean production release ZIP
 npm run package
 ```
-
----
-
-## License
-
-Released under the [MIT License](LICENSE).
