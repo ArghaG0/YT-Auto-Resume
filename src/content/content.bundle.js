@@ -376,11 +376,15 @@
      * @param {Element} popupContainer
      */
     async evaluatePrompt(popupContainer) {
-      if (!this.settings || !this.settings.enabled || !this.settings.youtubeEnabled) {
-        return;
-      }
       const detection = detectInactivityPrompt(popupContainer);
       if (detection.status === "confirmed" && detection.promptElement) {
+        if (!this.settings || !this.settings.enabled) {
+          console.log("[YouTube Auto Resume] Inactivity prompt detected, but extension is disabled in popup.");
+          return;
+        }
+        if (!this.settings.youtubeEnabled) {
+          return;
+        }
         if (!this.deduplicator.canAct(detection.promptElement)) {
           if (this.deduplicator.isCooldownActive()) {
             await logDiagnosticEvent(DIAGNOSTIC_EVENTS.COOLDOWN_THROTTLED);

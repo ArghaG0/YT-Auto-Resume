@@ -27,7 +27,7 @@ Because this extension is open-source and distributed via GitHub Releases (not t
 
 ### Step 1: Download & Extract
 1. Go to the [Releases](https://github.com/ArghaG0/YT-Auto-Resume/releases) page.
-2. Download the latest `youtube-auto-resume-vX.Y.Z.zip` file.
+2. Under **Assets**, download **`youtube-auto-resume-v1.0.0.zip`** (ensure you download this packaged asset, not the generic "Source code" zip).
 3. Extract the ZIP file to a permanent folder on your drive (e.g., `Documents/BrowserExtensions/YouTubeAutoResume`).
 
 ### Step 2: Load into Browser
@@ -37,7 +37,7 @@ Because this extension is open-source and distributed via GitHub Releases (not t
    - **Brave:** `brave://extensions`
 2. Enable the **Developer mode** toggle switch (usually located in the top-right corner).
 3. Click the **Load unpacked** button (top-left).
-4. Select the extracted **`src`** folder (the folder containing `manifest.json`).
+4. Select the extracted folder (the directory containing `manifest.json`).
 5. The extension icon will appear in your toolbar. Pin it for quick access!
 
 ---
