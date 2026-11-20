@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "description": "Automatically resumes YouTube playback paused by inactivity continue-watching prompts.",
   "permissions": [
-    "storage"
+    "storage",
+    "activeTab"
   ],
   "host_permissions": [
     "*://*.youtube.com/*"
@@ -29,7 +30,7 @@
         "*://*.youtube.com/*"
       ],
       "js": [
-        "content/content.js"
+        "content/content.bundle.js"
       ],
       "run_at": "document_idle"
     }

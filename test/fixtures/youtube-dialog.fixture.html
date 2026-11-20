@@ -1,0 +1,46 @@
+<ytd-popup-container id="test-popup-container">
+  <!-- 1. Standard Visible English Inactivity Dialog -->
+  <tp-yt-paper-dialog id="standard-dialog" role="dialog" style="display: block;">
+    <yt-confirm-dialog-renderer id="standard-renderer">
+      <div id="dialog-header">
+        <h2 class="title">Video paused. Continue watching?</h2>
+      </div>
+      <div id="buttons">
+        <yt-button-renderer id="cancel-button">
+          <button id="cancel-btn">Cancel</button>
+        </yt-button-renderer>
+        <yt-button-renderer id="confirm-button">
+          <button id="yes-btn">Yes</button>
+        </yt-button-renderer>
+      </div>
+    </yt-confirm-dialog-renderer>
+  </tp-yt-paper-dialog>
+
+  <!-- 2. Hidden Inactivity Dialog -->
+  <tp-yt-paper-dialog id="hidden-dialog" role="dialog" style="display: none;" aria-hidden="true">
+    <yt-confirm-dialog-renderer id="hidden-renderer">
+      <div id="dialog-header">
+        <h2 class="title">Video paused. Continue watching?</h2>
+      </div>
+      <div id="buttons">
+        <yt-button-renderer id="confirm-button">
+          <button>Yes</button>
+        </yt-button-renderer>
+      </div>
+    </yt-confirm-dialog-renderer>
+  </tp-yt-paper-dialog>
+
+  <!-- 3. Ambiguous Unsubscribe Dialog -->
+  <tp-yt-paper-dialog id="unsubscribe-dialog" role="dialog" style="display: block;">
+    <yt-confirm-dialog-renderer id="unsubscribe-renderer">
+      <div id="dialog-header">
+        <h2 class="title">Unsubscribe from Tech Channel?</h2>
+      </div>
+      <div id="buttons">
+        <yt-button-renderer id="confirm-button">
+          <button>Unsubscribe</button>
+        </yt-button-renderer>
+      </div>
+    </yt-confirm-dialog-renderer>
+  </tp-yt-paper-dialog>
+</ytd-popup-container>

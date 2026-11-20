@@ -7,14 +7,46 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <h1>YouTube Auto Resume</h1>
-    <label class="switch">
-      <input type="checkbox" id="toggle-enabled">
-      <span class="slider"></span>
-    </label>
-    <p id="status-text">Extension Status</p>
+  <div class="popup-container">
+    <header class="header">
+      <div class="brand">
+        <img src="../icons/icon-32.png" alt="" class="logo" width="22" height="22">
+        <h1 class="title">Auto Resume</h1>
+      </div>
+      <span class="version-badge" id="version-text">v1.0.0</span>
+    </header>
+
+    <div class="status-card" id="status-card">
+      <div class="status-indicator">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-label" id="status-label">Checking...</span>
+      </div>
+    </div>
+
+    <div class="control-section">
+      <div class="toggle-row">
+        <span class="toggle-label" id="master-toggle-label">Enable Auto Resume</span>
+        <label class="switch" for="master-toggle">
+          <input type="checkbox" id="master-toggle" role="switch" aria-labelledby="master-toggle-label">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <p class="description">
+        Automatically resumes playback when YouTube pauses for inactivity. User pauses are always respected.
+      </p>
+    </div>
+
+    <footer class="footer">
+      <button type="button" class="footer-btn" id="open-options-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        Options & Logs
+      </button>
+      <a href="https://github.com/ArghaG0/YT-Auto-Resume" target="_blank" rel="noopener noreferrer" class="footer-link" id="github-link">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+        GitHub
+      </a>
+    </footer>
   </div>
-  <script src="popup.js"></script>
+  <script src="popup.bundle.js"></script>
 </body>
 </html>

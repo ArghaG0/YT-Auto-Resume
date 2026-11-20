@@ -2,10 +2,123 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>YouTube Auto Resume Settings</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Auto Resume - Settings & Diagnostics</title>
+  <link rel="stylesheet" href="options.css">
 </head>
 <body>
-  <h1>Settings & Diagnostics</h1>
-  <script src="options.js"></script>
+  <div class="options-container">
+    <header class="header">
+      <div class="brand">
+        <img src="../icons/icon-48.png" alt="" class="logo" width="32" height="32">
+        <div class="brand-text">
+          <h1 class="title">YouTube Auto Resume</h1>
+          <p class="subtitle">Settings, Diagnostics & Configuration</p>
+        </div>
+      </div>
+      <span class="version-badge" id="version-text">v1.0.0</span>
+    </header>
+
+    <main class="content">
+      <!-- Card 1: Surfaces -->
+      <section class="card">
+        <h2 class="card-title">Supported Surfaces</h2>
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="youtube-toggle" class="setting-label">YouTube (www.youtube.com)</label>
+            <p class="setting-desc">Automatically resume playback when the inactivity prompt appears on YouTube desktop.</p>
+          </div>
+          <label class="switch" for="youtube-toggle">
+            <input type="checkbox" id="youtube-toggle" role="switch">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item disabled">
+          <div class="setting-info">
+            <div class="label-with-badge">
+              <span class="setting-label">YouTube Music (music.youtube.com)</span>
+              <span class="pill-badge">Coming in v1.1</span>
+            </div>
+            <p class="setting-desc">Support for YouTube Music's unique player interface is planned for a future release.</p>
+          </div>
+          <label class="switch" for="music-toggle">
+            <input type="checkbox" id="music-toggle" disabled role="switch">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Card 2: Diagnostics Console -->
+      <section class="card">
+        <h2 class="card-title">Diagnostics & Event Logging</h2>
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="diagnostics-toggle" class="setting-label">Enable Local Diagnostics</label>
+            <p class="setting-desc">Record concise event timestamps to diagnose prompt detection locally. Never leaves your device.</p>
+          </div>
+          <label class="switch" for="diagnostics-toggle">
+            <input type="checkbox" id="diagnostics-toggle" role="switch">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <!-- Log Console Container -->
+        <div class="diagnostics-console-container" id="diagnostics-console-container" style="display: none;">
+          <div class="console-header">
+            <span class="console-title" id="log-count-text">Log History (0 / 50)</span>
+            <div class="console-actions">
+              <button type="button" class="btn btn-secondary" id="copy-logs-btn">Copy Logs</button>
+              <button type="button" class="btn btn-danger" id="clear-logs-btn">Clear Logs</button>
+            </div>
+          </div>
+          <div class="console-box" id="console-box" role="region" aria-label="Diagnostic logs">
+            <p class="empty-logs">No diagnostic events recorded yet.</p>
+          </div>
+          <p class="buffer-note">Enforces a strict FIFO ring buffer capped at 50 entries (≤ 100 KB total storage).</p>
+        </div>
+      </section>
+
+      <!-- Card 3: Setup & Background Tips -->
+      <section class="card">
+        <h2 class="card-title">Background Playback & Updates</h2>
+        <div class="tips-grid">
+          <div class="tip-box">
+            <h3 class="tip-title">Browser Sleeping Tabs / Memory Saver</h3>
+            <p class="tip-desc">
+              If your browser freezes background tabs (e.g. Edge Sleeping Tabs or Chrome Memory Saver), YouTube tabs may be completely halted. Add <code>youtube.com</code> to your browser's "Never put these sites to sleep" list.
+            </p>
+          </div>
+          <div class="tip-box">
+            <h3 class="tip-title">Updating via GitHub Releases</h3>
+            <p class="tip-desc">
+              To update YouTube Auto Resume: download the latest release ZIP from GitHub, extract over your local folder, and click the <strong>Reload</strong> icon on <code>chrome://extensions</code>.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Card 4: Reset -->
+      <section class="card danger-card">
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-label">Reset to Defaults</span>
+            <p class="setting-desc">Restores all toggles and configurations to default factory settings.</p>
+          </div>
+          <button type="button" class="btn btn-outline-danger" id="reset-defaults-btn">Reset All</button>
+        </div>
+      </section>
+    </main>
+
+    <footer class="options-footer">
+      <p class="privacy-notice">
+        <strong>Privacy Assurance:</strong> YouTube Auto Resume runs 100% locally on your machine. No accounts, viewing history, telemetry, or external network requests are made.
+      </p>
+      <a href="https://github.com/ArghaG0/YT-Auto-Resume" target="_blank" rel="noopener noreferrer" class="link" id="github-releases-link">
+        View Project on GitHub
+      </a>
+    </footer>
+  </div>
+  <script src="options.bundle.js"></script>
 </body>
 </html>

@@ -1,7 +1,230 @@
-/* Popup Placeholder Styles */
-body {
+:root {
+  --bg-color: #ffffff;
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --card-bg: #f9fafb;
+  --border-color: #e5e7eb;
+  --accent-red: #cc0000;
+  --accent-green: #10b981;
+  --accent-neutral: #9ca3af;
+  --toggle-track: #d1d5db;
+  --toggle-knob: #ffffff;
+  --focus-ring: rgba(204, 0, 0, 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-color: #18181b;
+    --text-primary: #f4f4f5;
+    --text-secondary: #a1a1aa;
+    --card-bg: #27272a;
+    --border-color: #3f3f46;
+    --accent-red: #ff4e4e;
+    --accent-green: #34d399;
+    --accent-neutral: #71717a;
+    --toggle-track: #52525b;
+    --toggle-knob: #ffffff;
+    --focus-ring: rgba(255, 78, 78, 0.4);
+  }
+}
+
+* {
+  box-sizing: border-box;
   margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 280px;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.popup-container {
   padding: 16px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.version-badge {
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--card-bg);
+  padding: 2px 6px;
+  border-radius: 9999px;
+  border: 1px solid var(--border-color);
+}
+
+.status-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--accent-neutral);
+  transition: background-color 0.2s ease;
+}
+
+.status-dot.active {
+  background-color: var(--accent-green);
+  box-shadow: 0 0 6px var(--accent-green);
+}
+
+.status-dot.inactive {
+  background-color: var(--accent-neutral);
+}
+
+.status-dot.warning {
+  background-color: #f59e0b;
+}
+
+.status-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.control-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toggle-label {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+/* Accessible Toggle Switch */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--toggle-track);
+  transition: 0.2s;
+  border-radius: 22px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 3px;
+  bottom: 3px;
+  background-color: var(--toggle-knob);
+  transition: 0.2s;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+input:checked + .slider {
+  background-color: var(--accent-red);
+}
+
+input:focus-visible + .slider {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+input:checked + .slider:before {
+  transform: translateX(18px);
+}
+
+.description {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 4px;
+}
+
+.footer-btn, .footer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.footer-btn:hover, .footer-link:hover {
+  color: var(--text-primary);
+  background-color: var(--card-bg);
+}
+
+.footer-btn:focus-visible, .footer-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
 }
