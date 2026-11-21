@@ -166,5 +166,12 @@
         await clearDiagnosticLogs();
       }
     });
+    if (typeof chrome !== "undefined" && chrome.storage?.onChanged) {
+      chrome.storage.onChanged.addListener((changes, areaName) => {
+        if (areaName === "local" && changes[STORAGE_KEYS.DIAGNOSTICS]) {
+          renderDiagnostics();
+        }
+      });
+    }
   });
 })();

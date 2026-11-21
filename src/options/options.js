@@ -4,7 +4,7 @@
 
 import { getSettings, saveSettings } from '../common/storage.js';
 import { getDiagnosticLogs, clearDiagnosticLogs } from '../common/logger.js';
-import { DEFAULT_SETTINGS } from '../common/constants.js';
+import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../common/constants.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const youtubeToggle = document.getElementById('youtube-toggle');
@@ -117,4 +117,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       await clearDiagnosticLogs();
     }
   });
+
+  // Live-update log console when new events are logged from YouTube tabs
+  if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === 'local' && changes[STORAGE_KEYS.DIAGNOSTICS]) {
+        renderDiagnostics();
+      }
+    });
+  }
 });

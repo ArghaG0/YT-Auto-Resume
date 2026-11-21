@@ -134,7 +134,8 @@
   }
 
   // src/content/detector.js
-  var AMBIGUOUS_KEYWORDS = [
+  var REJECTED_KEYWORDS = [
+    // Subscriptions & Deletions
     "unsubscribe",
     "d\xE9sabonner",
     "abbestellen",
@@ -154,7 +155,94 @@
     "\u0443\u0434\u0430\u043B\u0438\u0442\u044C",
     "\u524A\u9664",
     "\uC0AD\uC81C",
-    "\u0939\u091F\u093E\u090F\u0902"
+    "\u0939\u091F\u093E\u090F\u0902",
+    // Skip & Next Video Navigation
+    "skip",
+    "next video",
+    "next track",
+    "up next",
+    "play next",
+    "n\xE4chste",
+    "n\xE4chstes",
+    "siguiente",
+    "suivant",
+    "prossimo",
+    "\u0441\u043B\u0435\u0434\u0443\u044E\u0449\u0435\u0435",
+    "\u6B21",
+    "\uB2E4\uC74C",
+    "\u0905\u0917\u0932\u093E",
+    // Playback Errors & Video Unavailable
+    "playback error",
+    "error occurred",
+    "video unavailable",
+    "unavailable in your region",
+    "failed to load",
+    "an error",
+    "une erreur",
+    "ein fehler",
+    "\u043E\u0448\u0438\u0431\u043A\u0430",
+    "\u30A8\u30E9\u30FC",
+    "\uC624\uB958",
+    // Playlist & Queue Alterations
+    "queue",
+    "playlist",
+    "clear queue",
+    "replace queue",
+    "replace playlist",
+    "clear playlist",
+    "remove from playlist",
+    "save playlist",
+    "warteschlange",
+    "file d'attente",
+    // Feedback & Reporting
+    "report",
+    "feedback",
+    "survey"
+  ];
+  var INACTIVITY_KEYWORDS = [
+    // English
+    "video paused",
+    "paused",
+    "continue watching",
+    "still watching",
+    // Spanish
+    "video pausado",
+    "pausado",
+    "seguir viendo",
+    "contin\xFAa viendo",
+    // German
+    "video pausiert",
+    "pausiert",
+    "weitersehen",
+    // Japanese
+    "\u52D5\u753B\u304C\u4E00\u6642\u505C\u6B62",
+    "\u4E00\u6642\u505C\u6B62",
+    "\u7D9A\u304D\u3092\u8996\u8074",
+    // French
+    "vid\xE9o mise en pause",
+    "mise en pause",
+    "continuer \xE0 regarder",
+    "continuer a regarder",
+    // Hindi
+    "\u0935\u0940\u0921\u093F\u092F\u094B \u0930\u094B\u0915 \u0926\u093F\u092F\u093E",
+    "\u0930\u094B\u0915 \u0926\u093F\u092F\u093E \u0917\u092F\u093E",
+    "\u0926\u0947\u0916\u0928\u093E \u091C\u093E\u0930\u0940",
+    // Italian
+    "video \xE8 stato messo in pausa",
+    "messo in pausa",
+    "continuare a guardare",
+    // Portuguese
+    "v\xEDdeo pausado",
+    "pausado",
+    "continuar assistindo",
+    // Russian
+    "\u0432\u0438\u0434\u0435\u043E \u043F\u0440\u0438\u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E",
+    "\u043F\u0440\u0438\u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u043E",
+    "\u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C \u043F\u0440\u043E\u0441\u043C\u043E\u0442\u0440",
+    // Korean
+    "\uB3D9\uC601\uC0C1\uC774 \uC77C\uC2DC\uC911\uC9C0",
+    "\uC77C\uC2DC\uC911\uC9C0",
+    "\uC774\uC5B4\uC11C \uC2DC\uCCAD"
   ];
   function isElementVisible(element) {
     if (!element || !element.isConnected) {
@@ -190,74 +278,95 @@
     if (!confirmBtn || !isElementVisible(confirmBtn)) {
       return { status: "not_found" };
     }
-    const dialogText = (confirmRenderer.textContent || "").toLowerCase();
-    for (const keyword of AMBIGUOUS_KEYWORDS) {
+    const dialogText = (confirmRenderer.textContent || "").toLowerCase().trim();
+    const textSnippet = dialogText.slice(0, 120);
+    for (const keyword of REJECTED_KEYWORDS) {
       if (dialogText.includes(keyword)) {
-        return { status: "ambiguous", promptElement: confirmRenderer };
+        return {
+          status: "ambiguous",
+          promptElement: confirmRenderer,
+          reason: `rejected_keyword:${keyword}`,
+          textSnippet
+        };
       }
     }
-    return { status: "confirmed", promptElement: confirmRenderer };
+    const hasInactivityCue = INACTIVITY_KEYWORDS.some((keyword) => dialogText.includes(keyword));
+    if (!hasInactivityCue) {
+      return {
+        status: "ambiguous",
+        promptElement: confirmRenderer,
+        reason: "lacks_inactivity_cues",
+        textSnippet
+      };
+    }
+    return {
+      status: "confirmed",
+      promptElement: confirmRenderer,
+      textSnippet
+    };
   }
 
   // src/content/actions.js
+  var CANCEL_TERMS = ["cancel", "no", "abbruch", "annuler", "cancelar", "annulla", "\u043E\u0442\u043C\u0435\u043D\u0430", "\u30AD\u30E3\u30F3\u30BB\u30EB", "\uCDE8\uC18C", "\u0930\u0926\u094D\u0926"];
+  function isCancelElement(element) {
+    if (!element) return false;
+    if (element.id === "cancel-button" || element.closest?.("#cancel-button")) {
+      return true;
+    }
+    const ariaLabel = (element.getAttribute?.("aria-label") || "").toLowerCase().trim();
+    const text = (element.textContent || "").toLowerCase().trim();
+    return CANCEL_TERMS.some((term) => ariaLabel === term || text === term);
+  }
   function resolveClickableButton(element, depth = 0, maxDepth = LIMITS.SHADOW_MAX_DEPTH) {
     if (!element || depth > maxDepth) return null;
+    if (isCancelElement(element)) return null;
     const tagName = element.tagName ? element.tagName.toLowerCase() : "";
     const role = element.getAttribute ? element.getAttribute("role") : null;
     const isDirectInteractive = tagName === "button" || role === "button";
     if (isDirectInteractive) {
       const isDisabled = element.disabled || element.getAttribute("aria-disabled") === "true";
-      if (isElementVisible(element) && !isDisabled) {
+      if (isElementVisible(element) && !isDisabled && !isCancelElement(element)) {
         return element;
       }
       return null;
     }
     if (element.shadowRoot) {
       const shadowNativeBtn = element.shadowRoot.querySelector(SELECTORS.NATIVE_BUTTON);
-      if (shadowNativeBtn && isElementVisible(shadowNativeBtn) && !shadowNativeBtn.disabled) {
+      if (shadowNativeBtn && isElementVisible(shadowNativeBtn) && !shadowNativeBtn.disabled && !isCancelElement(shadowNativeBtn)) {
         return shadowNativeBtn;
       }
       const shadowRoleBtn = element.shadowRoot.querySelector('[role="button"]');
-      if (shadowRoleBtn && isElementVisible(shadowRoleBtn) && shadowRoleBtn.getAttribute("aria-disabled") !== "true") {
+      if (shadowRoleBtn && isElementVisible(shadowRoleBtn) && shadowRoleBtn.getAttribute("aria-disabled") !== "true" && !isCancelElement(shadowRoleBtn)) {
         return shadowRoleBtn;
       }
       const shadowChildren = element.shadowRoot.children || [];
       for (const child of shadowChildren) {
         const resolved = resolveClickableButton(child, depth + 1, maxDepth);
-        if (resolved) return resolved;
+        if (resolved && !isCancelElement(resolved)) return resolved;
       }
     }
     const directNativeBtn = element.querySelector(SELECTORS.NATIVE_BUTTON);
-    if (directNativeBtn && isElementVisible(directNativeBtn) && !directNativeBtn.disabled) {
+    if (directNativeBtn && isElementVisible(directNativeBtn) && !directNativeBtn.disabled && !isCancelElement(directNativeBtn)) {
       return directNativeBtn;
     }
     const directRoleBtn = element.querySelector('[role="button"]');
-    if (directRoleBtn && isElementVisible(directRoleBtn) && directRoleBtn.getAttribute("aria-disabled") !== "true") {
+    if (directRoleBtn && isElementVisible(directRoleBtn) && directRoleBtn.getAttribute("aria-disabled") !== "true" && !isCancelElement(directRoleBtn)) {
       return directRoleBtn;
     }
     const children = element.children || [];
     for (const child of children) {
       const resolved = resolveClickableButton(child, depth + 1, maxDepth);
-      if (resolved) return resolved;
+      if (resolved && !isCancelElement(resolved)) return resolved;
     }
     return null;
   }
   function findContinueButton(promptElement) {
     if (!promptElement) return null;
     const confirmBtnContainer = promptElement.querySelector(SELECTORS.CONFIRM_BUTTON);
-    if (confirmBtnContainer && isElementVisible(confirmBtnContainer)) {
+    if (confirmBtnContainer && isElementVisible(confirmBtnContainer) && !isCancelElement(confirmBtnContainer)) {
       const resolved = resolveClickableButton(confirmBtnContainer);
-      if (resolved && isElementVisible(resolved) && !resolved.disabled) {
+      if (resolved && isElementVisible(resolved) && !resolved.disabled && !isCancelElement(resolved)) {
         return resolved;
-      }
-    }
-    const buttonRenderers = promptElement.querySelectorAll(SELECTORS.BUTTON_RENDERER);
-    for (const renderer of buttonRenderers) {
-      if (isElementVisible(renderer)) {
-        const resolved = resolveClickableButton(renderer);
-        if (resolved && isElementVisible(resolved) && !resolved.disabled) {
-          return resolved;
-        }
       }
     }
     return null;
@@ -266,8 +375,10 @@
     if (!buttonElement) {
       return { success: false, reason: "Button element is null or undefined" };
     }
+    if (isCancelElement(buttonElement)) {
+      return { success: false, reason: "Refused to click cancel or negative element" };
+    }
     try {
-      buttonElement.focus?.();
       buttonElement.click();
       return { success: true };
     } catch (err) {
@@ -392,6 +503,31 @@
   };
 
   // src/content/content.js
+  function getVideoDiagnostics() {
+    if (typeof document === "undefined") {
+      return { videoId: null, currentTime: null, duration: null, paused: null, readyState: null };
+    }
+    const video = document.querySelector("video");
+    let videoId = null;
+    try {
+      if (typeof window !== "undefined" && window.location?.search) {
+        videoId = new URLSearchParams(window.location.search).get("v");
+      }
+      if (!videoId) {
+        const watchFlexy = document.querySelector("ytd-watch-flexy");
+        videoId = watchFlexy?.getAttribute("video-id") || null;
+      }
+    } catch {
+      videoId = null;
+    }
+    return {
+      videoId,
+      currentTime: video && typeof video.currentTime === "number" ? Number(video.currentTime.toFixed(2)) : null,
+      duration: video && typeof video.duration === "number" && !Number.isNaN(video.duration) ? Number(video.duration.toFixed(2)) : null,
+      paused: video ? video.paused : null,
+      readyState: video ? video.readyState : null
+    };
+  }
   var YouTubeAutoResumeCoordinator = class {
     constructor() {
       this.settings = null;
@@ -642,19 +778,24 @@
         const button = findContinueButton(detection.promptElement);
         if (!button) {
           await logDiagnosticEvent(DIAGNOSTIC_EVENTS.BUTTON_NOT_FOUND, {
+            textSnippet: detection.textSnippet,
             childrenCount: detection.promptElement.children.length
           });
           return;
         }
         await logDiagnosticEvent(DIAGNOSTIC_EVENTS.BUTTON_RESOLVED_SHADOW, {
+          buttonId: button.id || "confirm-button",
+          selector: "#confirm-button button",
           tag: button.tagName?.toLowerCase(),
-          id: button.id || void 0,
           role: button.getAttribute("role") || void 0
         });
         this.isProcessing = true;
         this.deduplicator.markPending(detection.promptElement);
         try {
-          await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PROMPT_DETECTED);
+          await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PROMPT_DETECTED, {
+            textSnippet: detection.textSnippet,
+            status: "confirmed"
+          });
           let attempt = 0;
           let resumed = false;
           while (attempt < LIMITS.MAX_RETRIES && !resumed) {
@@ -667,25 +808,44 @@
               await logDiagnosticEvent(DIAGNOSTIC_EVENTS.BUTTON_NOT_FOUND, { attempt });
               break;
             }
+            const videoBefore = getVideoDiagnostics();
             const actionResult = dispatchContinueAction(activeBtn);
             if (!actionResult.success) {
               await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CLICK_DISPATCH_FAILED, {
                 attempt,
-                reason: actionResult.reason
+                reason: actionResult.reason,
+                videoBefore
               });
               if (attempt < LIMITS.MAX_RETRIES) {
                 await new Promise((r) => setTimeout(r, LIMITS.RETRY_DELAY_MS));
               }
               continue;
             }
-            await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTINUE_CLICKED, { attempt });
+            await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTINUE_CLICKED, {
+              attempt,
+              buttonId: activeBtn.id || "confirm-button",
+              selector: "#confirm-button button",
+              videoBefore
+            });
             resumed = await this.verifyPlaybackResumption(LIMITS.VERIFICATION_TIMEOUT_MS);
+            const videoAfter = getVideoDiagnostics();
+            const dialogDismissed = !detection.promptElement.isConnected || !isElementVisible(detection.promptElement);
             if (resumed) {
               this.deduplicator.markSuccess(detection.promptElement);
-              await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PLAYBACK_VERIFIED, { attempt });
+              await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PLAYBACK_VERIFIED, {
+                attempt,
+                videoBefore,
+                videoAfter,
+                dialogDismissed
+              });
               break;
             } else {
-              await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PLAYBACK_VERIFY_FAILED, { attempt });
+              await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PLAYBACK_VERIFY_FAILED, {
+                attempt,
+                videoBefore,
+                videoAfter,
+                dialogDismissed
+              });
               if (attempt < LIMITS.MAX_RETRIES) {
                 await new Promise((r) => setTimeout(r, LIMITS.RETRY_DELAY_MS));
               }
@@ -705,7 +865,10 @@
           this.isProcessing = false;
         }
       } else if (detection.status === "ambiguous") {
-        await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AMBIGUOUS_PROMPT_IGNORED);
+        await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AMBIGUOUS_PROMPT_IGNORED, {
+          textSnippet: detection.textSnippet,
+          reason: detection.reason
+        });
       }
     }
     /**

@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { findContinueButton, resolveClickableButton, dispatchContinueAction } from '../src/content/actions.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { findContinueButton, resolveClickableButton, dispatchContinueAction, isCancelElement } from '../src/content/actions.js';
 
-describe('actions.js - Action & Deep Shadow DOM Piercing Engine', () => {
+describe('actions.js - Action & Safe Button Resolution Engine', () => {
   let promptContainer;
 
   beforeEach(() => {
@@ -94,6 +94,35 @@ describe('actions.js - Action & Deep Shadow DOM Piercing Engine', () => {
     expect(btn?.id).toBe('nested-shape-btn');
   });
 
+  it('strictly refuses to select #cancel-button when #confirm-button is missing', () => {
+    promptContainer.innerHTML = `
+      <div id="buttons">
+        <yt-button-renderer id="cancel-button">
+          <button id="no-btn">No</button>
+        </yt-button-renderer>
+      </div>
+    `;
+
+    const btn = findContinueButton(promptContainer);
+    expect(btn).toBeNull();
+  });
+
+  it('detects cancel elements with cancel aria-label or text and rejects them', () => {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    expect(isCancelElement(cancelBtn)).toBe(true);
+
+    const cancelWrapper = document.createElement('div');
+    cancelWrapper.id = 'cancel-button';
+    const innerBtn = document.createElement('button');
+    cancelWrapper.appendChild(innerBtn);
+    expect(isCancelElement(innerBtn)).toBe(true);
+
+    const result = dispatchContinueAction(cancelBtn);
+    expect(result.success).toBe(false);
+    expect(result.reason).toContain('Refused to click cancel');
+  });
+
   it('respects maxDepth boundary during recursive resolution', () => {
     const parent = document.createElement('div');
     let curr = parent;
@@ -106,7 +135,6 @@ describe('actions.js - Action & Deep Shadow DOM Piercing Engine', () => {
     deepBtn.id = 'too-deep-btn';
     curr.appendChild(deepBtn);
 
-    // Default maxDepth is 4, depth of 7 will return null
     const resolved = resolveClickableButton(parent, 0, 4);
     expect(resolved).toBeNull();
   });
@@ -124,9 +152,12 @@ describe('actions.js - Action & Deep Shadow DOM Piercing Engine', () => {
     expect(btn).toBeNull();
   });
 
-  it('successfully dispatches programmatic synthetic click', () => {
+  it('successfully dispatches programmatic synthetic click WITHOUT calling .focus()', () => {
     let clicked = false;
     const button = document.createElement('button');
+    const focusSpy = vi.fn();
+    button.focus = focusSpy;
+
     button.addEventListener('click', () => {
       clicked = true;
     });
@@ -135,6 +166,7 @@ describe('actions.js - Action & Deep Shadow DOM Piercing Engine', () => {
     const result = dispatchContinueAction(button);
     expect(result.success).toBe(true);
     expect(clicked).toBe(true);
+    expect(focusSpy).not.toHaveBeenCalled(); // Ensures no focus shifting
   });
 
   it('handles null button gracefully without crashing', () => {

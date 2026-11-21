@@ -6,9 +6,42 @@
 import { SELECTORS, DIAGNOSTIC_EVENTS, LIMITS } from '../common/constants.js';
 import { getSettings, onSettingsChanged } from '../common/storage.js';
 import { logDiagnosticEvent } from '../common/logger.js';
-import { detectInactivityPrompt } from './detector.js';
+import { detectInactivityPrompt, isElementVisible } from './detector.js';
 import { findContinueButton, dispatchContinueAction } from './actions.js';
 import { PromptDeduplicator } from './deduplicator.js';
+
+/**
+ * Captures comprehensive video player telemetry for structured diagnostics.
+ * @returns {{ videoId: string|null, currentTime: number|null, duration: number|null, paused: boolean|null, readyState: number|null }}
+ */
+export function getVideoDiagnostics() {
+  if (typeof document === 'undefined') {
+    return { videoId: null, currentTime: null, duration: null, paused: null, readyState: null };
+  }
+
+  const video = document.querySelector('video');
+
+  let videoId = null;
+  try {
+    if (typeof window !== 'undefined' && window.location?.search) {
+      videoId = new URLSearchParams(window.location.search).get('v');
+    }
+    if (!videoId) {
+      const watchFlexy = document.querySelector('ytd-watch-flexy');
+      videoId = watchFlexy?.getAttribute('video-id') || null;
+    }
+  } catch {
+    videoId = null;
+  }
+
+  return {
+    videoId,
+    currentTime: video && typeof video.currentTime === 'number' ? Number(video.currentTime.toFixed(2)) : null,
+    duration: video && typeof video.duration === 'number' && !Number.isNaN(video.duration) ? Number(video.duration.toFixed(2)) : null,
+    paused: video ? video.paused : null,
+    readyState: video ? video.readyState : null,
+  };
+}
 
 export class YouTubeAutoResumeCoordinator {
   constructor() {
@@ -316,14 +349,16 @@ export class YouTubeAutoResumeCoordinator {
       const button = findContinueButton(detection.promptElement);
       if (!button) {
         await logDiagnosticEvent(DIAGNOSTIC_EVENTS.BUTTON_NOT_FOUND, {
+          textSnippet: detection.textSnippet,
           childrenCount: detection.promptElement.children.length,
         });
         return;
       }
 
       await logDiagnosticEvent(DIAGNOSTIC_EVENTS.BUTTON_RESOLVED_SHADOW, {
+        buttonId: button.id || 'confirm-button',
+        selector: '#confirm-button button',
         tag: button.tagName?.toLowerCase(),
-        id: button.id || undefined,
         role: button.getAttribute('role') || undefined,
       });
 
@@ -332,7 +367,10 @@ export class YouTubeAutoResumeCoordinator {
       this.deduplicator.markPending(detection.promptElement);
 
       try {
-        await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PROMPT_DETECTED);
+        await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PROMPT_DETECTED, {
+          textSnippet: detection.textSnippet,
+          status: 'confirmed',
+        });
 
         let attempt = 0;
         let resumed = false;
@@ -350,11 +388,15 @@ export class YouTubeAutoResumeCoordinator {
             break;
           }
 
+          // Capture video telemetry before clicking
+          const videoBefore = getVideoDiagnostics();
+
           const actionResult = dispatchContinueAction(activeBtn);
           if (!actionResult.success) {
             await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CLICK_DISPATCH_FAILED, {
               attempt,
               reason: actionResult.reason,
+              videoBefore,
             });
             if (attempt < LIMITS.MAX_RETRIES) {
               await new Promise((r) => setTimeout(r, LIMITS.RETRY_DELAY_MS));
@@ -362,17 +404,36 @@ export class YouTubeAutoResumeCoordinator {
             continue;
           }
 
-          await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTINUE_CLICKED, { attempt });
+          await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTINUE_CLICKED, {
+            attempt,
+            buttonId: activeBtn.id || 'confirm-button',
+            selector: '#confirm-button button',
+            videoBefore,
+          });
 
           // Two-phase verification: wait for video playback resumption
           resumed = await this.verifyPlaybackResumption(LIMITS.VERIFICATION_TIMEOUT_MS);
 
+          // Capture video telemetry and prompt status after click/verification
+          const videoAfter = getVideoDiagnostics();
+          const dialogDismissed = !detection.promptElement.isConnected || !isElementVisible(detection.promptElement);
+
           if (resumed) {
             this.deduplicator.markSuccess(detection.promptElement);
-            await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PLAYBACK_VERIFIED, { attempt });
+            await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PLAYBACK_VERIFIED, {
+              attempt,
+              videoBefore,
+              videoAfter,
+              dialogDismissed,
+            });
             break;
           } else {
-            await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PLAYBACK_VERIFY_FAILED, { attempt });
+            await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PLAYBACK_VERIFY_FAILED, {
+              attempt,
+              videoBefore,
+              videoAfter,
+              dialogDismissed,
+            });
             if (attempt < LIMITS.MAX_RETRIES) {
               await new Promise((r) => setTimeout(r, LIMITS.RETRY_DELAY_MS));
             }
@@ -394,7 +455,10 @@ export class YouTubeAutoResumeCoordinator {
         this.isProcessing = false;
       }
     } else if (detection.status === 'ambiguous') {
-      await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AMBIGUOUS_PROMPT_IGNORED);
+      await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AMBIGUOUS_PROMPT_IGNORED, {
+        textSnippet: detection.textSnippet,
+        reason: detection.reason,
+      });
     }
   }
 

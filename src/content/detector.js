@@ -1,15 +1,57 @@
 /**
- * Inactivity Prompt Detection Engine (i18n Resilient)
+ * Inactivity Prompt Detection Engine (i18n Resilient & Fail-Closed)
  */
 
 import { SELECTORS } from '../common/constants.js';
 
-// Negative keywords indicating destructive or subscription dialogs that must NOT be auto-clicked
-const AMBIGUOUS_KEYWORDS = [
+// Negative/rejected keywords indicating destructive, subscription, navigation, error, or skip dialogs
+const REJECTED_KEYWORDS = [
+  // Subscriptions & Deletions
   'unsubscribe', 'désabonner', 'abbestellen', 'cancelar suscripción',
   'cancelar inscrição', 'annulla iscrizione', 'отписаться', '登録解除',
   '구독 취소', 'सदस्यता छोड़ें', 'delete', 'supprimer', 'löschen', 'eliminar',
-  'excluir', 'elimina', 'удалить', '削除', '삭제', 'हटाएं'
+  'excluir', 'elimina', 'удалить', '削除', '삭제', 'हटाएं',
+
+  // Skip & Next Video Navigation
+  'skip', 'next video', 'next track', 'up next', 'play next',
+  'nächste', 'nächstes', 'siguiente', 'suivant', 'prossimo',
+  'следующее', '次', '다음', 'अगला',
+
+  // Playback Errors & Video Unavailable
+  'playback error', 'error occurred', 'video unavailable',
+  'unavailable in your region', 'failed to load', 'an error',
+  'une erreur', 'ein fehler', 'ошибка', 'エラー', '오류',
+
+  // Playlist & Queue Alterations
+  'queue', 'playlist', 'clear queue', 'replace queue', 'replace playlist', 'clear playlist',
+  'remove from playlist', 'save playlist', 'warteschlange', 'file d\'attente',
+
+  // Feedback & Reporting
+  'report', 'feedback', 'survey',
+];
+
+// Positive keywords indicating explicit inactivity prompts across supported languages
+const INACTIVITY_KEYWORDS = [
+  // English
+  'video paused', 'paused', 'continue watching', 'still watching',
+  // Spanish
+  'video pausado', 'pausado', 'seguir viendo', 'continúa viendo',
+  // German
+  'video pausiert', 'pausiert', 'weitersehen',
+  // Japanese
+  '動画が一時停止', '一時停止', '続きを視聴',
+  // French
+  'vidéo mise en pause', 'mise en pause', 'continuer à regarder', 'continuer a regarder',
+  // Hindi
+  'वीडियो रोक दिया', 'रोक दिया गया', 'देखना जारी',
+  // Italian
+  'video è stato messo in pausa', 'messo in pausa', 'continuare a guardare',
+  // Portuguese
+  'vídeo pausado', 'pausado', 'continuar assistindo',
+  // Russian
+  'видео приостановлено', 'приостановлено', 'продолжить просмотр',
+  // Korean
+  '동영상이 일시중지', '일시중지', '이어서 시청',
 ];
 
 /**
@@ -44,8 +86,9 @@ export function isElementVisible(element) {
 
 /**
  * Detects whether a supported YouTube inactivity prompt is active in the container.
+ * Strictly verifies positive inactivity semantics and rejects uncertain, error, skip, or unrelated dialogs.
  * @param {Element|Document} container
- * @returns {{ status: 'confirmed' | 'not_found' | 'ambiguous', promptElement?: Element }}
+ * @returns {{ status: 'confirmed' | 'not_found' | 'ambiguous', promptElement?: Element, textSnippet?: string, reason?: string }}
  */
 export function detectInactivityPrompt(container) {
   if (!container) {
@@ -70,14 +113,37 @@ export function detectInactivityPrompt(container) {
     return { status: 'not_found' };
   }
 
-  // Inspect dialog text for ambiguous/destructive actions
-  const dialogText = (confirmRenderer.textContent || '').toLowerCase();
-  for (const keyword of AMBIGUOUS_KEYWORDS) {
+  // Extract full dialog text snippet for evaluation & diagnostics
+  const dialogText = (confirmRenderer.textContent || '').toLowerCase().trim();
+  const textSnippet = dialogText.slice(0, 120);
+
+  // 1. Negative Check: Reject if dialog matches destructive, skip, error, or playlist keywords
+  for (const keyword of REJECTED_KEYWORDS) {
     if (dialogText.includes(keyword)) {
-      return { status: 'ambiguous', promptElement: confirmRenderer };
+      return {
+        status: 'ambiguous',
+        promptElement: confirmRenderer,
+        reason: `rejected_keyword:${keyword}`,
+        textSnippet,
+      };
     }
   }
 
-  // Confirmed inactivity prompt
-  return { status: 'confirmed', promptElement: confirmRenderer };
+  // 2. Positive Check: Ensure dialog contains explicit inactivity/paused/continue cues
+  const hasInactivityCue = INACTIVITY_KEYWORDS.some((keyword) => dialogText.includes(keyword));
+  if (!hasInactivityCue) {
+    return {
+      status: 'ambiguous',
+      promptElement: confirmRenderer,
+      reason: 'lacks_inactivity_cues',
+      textSnippet,
+    };
+  }
+
+  // Confirmed authentic inactivity prompt
+  return {
+    status: 'confirmed',
+    promptElement: confirmRenderer,
+    textSnippet,
+  };
 }

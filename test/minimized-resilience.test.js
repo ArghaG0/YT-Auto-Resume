@@ -284,4 +284,88 @@ describe('minimized-resilience.test.js - Minimized Window & Verification Suite',
     eventNames = logs.map((l) => l.event);
     expect(eventNames).toContain('window_restored');
   });
+
+  it('records structured video diagnostics before and after click including prompt track boundary position', async () => {
+    const popupContainer = document.createElement('ytd-popup-container');
+    document.body.appendChild(popupContainer);
+
+    // Set mock window.location
+    delete window.location;
+    window.location = new URL('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+
+    const video = document.createElement('video');
+    Object.defineProperty(video, 'paused', { value: true, writable: true });
+    Object.defineProperty(video, 'currentTime', { value: 238.5, writable: true });
+    Object.defineProperty(video, 'duration', { value: 240.0, writable: true });
+    Object.defineProperty(video, 'readyState', { value: 4, writable: true });
+    document.body.appendChild(video);
+
+    await coordinator.init();
+
+    const dialog = createMockPromptDialog(() => {
+      video.paused = false;
+      video.currentTime = 239.0;
+      video.dispatchEvent(new Event('playing'));
+    });
+
+    popupContainer.appendChild(dialog);
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    const logs = await getDiagnosticLogs();
+    const clickEvent = logs.find((l) => l.event === 'continue_clicked');
+    const verifiedEvent = logs.find((l) => l.event === 'playback_verified');
+
+    expect(clickEvent).toBeDefined();
+    const clickDetails = JSON.parse(clickEvent.details);
+    expect(clickDetails.buttonId).toBe('confirm-button');
+    expect(clickDetails.selector).toBe('#confirm-button button');
+    expect(clickDetails.videoBefore.videoId).toBe('dQw4w9WgXcQ');
+    expect(clickDetails.videoBefore.currentTime).toBe(238.5);
+    expect(clickDetails.videoBefore.duration).toBe(240);
+
+    expect(verifiedEvent).toBeDefined();
+    const verifiedDetails = JSON.parse(verifiedEvent.details);
+    expect(verifiedDetails.videoAfter.paused).toBe(false);
+    expect(verifiedDetails.dialogDismissed).toBeDefined();
+  });
+
+  it('strictly ignores skip or next-video dialogs in playlists and records ambiguous event with text snippet', async () => {
+    const popupContainer = document.createElement('ytd-popup-container');
+    document.body.appendChild(popupContainer);
+
+    await coordinator.init();
+
+    let clickCount = 0;
+    const dialog = document.createElement('tp-yt-paper-dialog');
+    dialog.setAttribute('role', 'dialog');
+    dialog.style.display = 'block';
+
+    const renderer = document.createElement('yt-confirm-dialog-renderer');
+    const header = document.createElement('div');
+    header.innerHTML = '<h2>Skip to next video in playlist?</h2>';
+
+    const btnContainer = document.createElement('div');
+    btnContainer.id = 'confirm-button';
+    const btn = document.createElement('button');
+    btn.textContent = 'Skip';
+    btn.addEventListener('click', () => { clickCount++; });
+    btnContainer.appendChild(btn);
+
+    renderer.appendChild(header);
+    renderer.appendChild(btnContainer);
+    dialog.appendChild(renderer);
+    popupContainer.appendChild(dialog);
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(clickCount).toBe(0);
+
+    const logs = await getDiagnosticLogs();
+    const ambiguousLog = logs.find((l) => l.event === 'ambiguous_prompt_ignored');
+    expect(ambiguousLog).toBeDefined();
+    const details = JSON.parse(ambiguousLog.details);
+    expect(details.reason).toContain('rejected_keyword');
+    expect(details.textSnippet).toContain('skip to next video in playlist?');
+  });
 });

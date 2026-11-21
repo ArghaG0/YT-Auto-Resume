@@ -1,13 +1,32 @@
 /**
  * Action & Shadow DOM Piercing Engine
+ * Restricts interaction strictly to #confirm-button and prevents focus leakage
  */
 
 import { SELECTORS, LIMITS } from '../common/constants.js';
 import { isElementVisible } from './detector.js';
 
+const CANCEL_TERMS = ['cancel', 'no', 'abbruch', 'annuler', 'cancelar', 'annulla', 'отмена', 'キャンセル', '취소', 'रद्द'];
+
+/**
+ * Checks if an element has cancellation or negative action semantics.
+ * @param {Element} element
+ * @returns {boolean}
+ */
+export function isCancelElement(element) {
+  if (!element) return false;
+  if (element.id === 'cancel-button' || element.closest?.('#cancel-button')) {
+    return true;
+  }
+  const ariaLabel = (element.getAttribute?.('aria-label') || '').toLowerCase().trim();
+  const text = (element.textContent || '').toLowerCase().trim();
+  return CANCEL_TERMS.some((term) => ariaLabel === term || text === term);
+}
+
 /**
  * Recursively locates the clickable native button within an element, its children, or its Shadow Roots.
  * Depth-bounded to prevent recursive runaway on malformed trees.
+ * Never resolves cancel or negative buttons.
  * @param {Element} element
  * @param {number} [depth=0]
  * @param {number} [maxDepth=LIMITS.SHADOW_MAX_DEPTH]
@@ -15,6 +34,7 @@ import { isElementVisible } from './detector.js';
  */
 export function resolveClickableButton(element, depth = 0, maxDepth = LIMITS.SHADOW_MAX_DEPTH) {
   if (!element || depth > maxDepth) return null;
+  if (isCancelElement(element)) return null;
 
   // 1. Direct interactive check on the element itself
   const tagName = element.tagName ? element.tagName.toLowerCase() : '';
@@ -23,7 +43,7 @@ export function resolveClickableButton(element, depth = 0, maxDepth = LIMITS.SHA
 
   if (isDirectInteractive) {
     const isDisabled = element.disabled || element.getAttribute('aria-disabled') === 'true';
-    if (isElementVisible(element) && !isDisabled) {
+    if (isElementVisible(element) && !isDisabled && !isCancelElement(element)) {
       return element;
     }
     return null;
@@ -31,33 +51,31 @@ export function resolveClickableButton(element, depth = 0, maxDepth = LIMITS.SHA
 
   // 2. If the element hosts an open shadowRoot, search inside it
   if (element.shadowRoot) {
-    // Check direct button in shadow root
     const shadowNativeBtn = element.shadowRoot.querySelector(SELECTORS.NATIVE_BUTTON);
-    if (shadowNativeBtn && isElementVisible(shadowNativeBtn) && !shadowNativeBtn.disabled) {
+    if (shadowNativeBtn && isElementVisible(shadowNativeBtn) && !shadowNativeBtn.disabled && !isCancelElement(shadowNativeBtn)) {
       return shadowNativeBtn;
     }
 
     const shadowRoleBtn = element.shadowRoot.querySelector('[role="button"]');
-    if (shadowRoleBtn && isElementVisible(shadowRoleBtn) && shadowRoleBtn.getAttribute('aria-disabled') !== 'true') {
+    if (shadowRoleBtn && isElementVisible(shadowRoleBtn) && shadowRoleBtn.getAttribute('aria-disabled') !== 'true' && !isCancelElement(shadowRoleBtn)) {
       return shadowRoleBtn;
     }
 
-    // Traverse children inside shadowRoot
     const shadowChildren = element.shadowRoot.children || [];
     for (const child of shadowChildren) {
       const resolved = resolveClickableButton(child, depth + 1, maxDepth);
-      if (resolved) return resolved;
+      if (resolved && !isCancelElement(resolved)) return resolved;
     }
   }
 
   // 3. Search direct native button or role="button" in light DOM
   const directNativeBtn = element.querySelector(SELECTORS.NATIVE_BUTTON);
-  if (directNativeBtn && isElementVisible(directNativeBtn) && !directNativeBtn.disabled) {
+  if (directNativeBtn && isElementVisible(directNativeBtn) && !directNativeBtn.disabled && !isCancelElement(directNativeBtn)) {
     return directNativeBtn;
   }
 
   const directRoleBtn = element.querySelector('[role="button"]');
-  if (directRoleBtn && isElementVisible(directRoleBtn) && directRoleBtn.getAttribute('aria-disabled') !== 'true') {
+  if (directRoleBtn && isElementVisible(directRoleBtn) && directRoleBtn.getAttribute('aria-disabled') !== 'true' && !isCancelElement(directRoleBtn)) {
     return directRoleBtn;
   }
 
@@ -65,47 +83,37 @@ export function resolveClickableButton(element, depth = 0, maxDepth = LIMITS.SHA
   const children = element.children || [];
   for (const child of children) {
     const resolved = resolveClickableButton(child, depth + 1, maxDepth);
-    if (resolved) return resolved;
+    if (resolved && !isCancelElement(resolved)) return resolved;
   }
 
   return null;
 }
 
 /**
- * Finds the explicit continuation button within the confirmed prompt.
- * Traverses Web Component shadow boundaries recursively.
+ * Finds the explicit continuation button strictly within the confirmed prompt's #confirm-button.
+ * Never touches #cancel-button and has zero unrestricted fallbacks.
  * @param {Element} promptElement
  * @returns {HTMLButtonElement|Element|null}
  */
 export function findContinueButton(promptElement) {
   if (!promptElement) return null;
 
-  // Primary target: #confirm-button inside the confirm dialog
+  // Primary and ONLY target: #confirm-button inside the confirm dialog
   const confirmBtnContainer = promptElement.querySelector(SELECTORS.CONFIRM_BUTTON);
-  if (confirmBtnContainer && isElementVisible(confirmBtnContainer)) {
+  if (confirmBtnContainer && isElementVisible(confirmBtnContainer) && !isCancelElement(confirmBtnContainer)) {
     const resolved = resolveClickableButton(confirmBtnContainer);
-    if (resolved && isElementVisible(resolved) && !resolved.disabled) {
+    if (resolved && isElementVisible(resolved) && !resolved.disabled && !isCancelElement(resolved)) {
       return resolved;
     }
   }
 
-  // Secondary fallback: Any yt-button-renderer inside dialog buttons container
-  const buttonRenderers = promptElement.querySelectorAll(SELECTORS.BUTTON_RENDERER);
-  for (const renderer of buttonRenderers) {
-    if (isElementVisible(renderer)) {
-      const resolved = resolveClickableButton(renderer);
-      if (resolved && isElementVisible(resolved) && !resolved.disabled) {
-        return resolved;
-      }
-    }
-  }
-
+  // Zero fallback to unrestricted button renderers: strictly avoids selecting #cancel-button
   return null;
 }
 
 /**
  * Dispatches a programmatic synthetic click event to activate the continuation button.
- * Preserves standard .click() without pointer event simulation.
+ * Preserves standard native .click() without focus shifting or synthetic pointer events.
  * @param {Element} buttonElement
  * @returns {{ success: boolean, reason?: string }}
  */
@@ -114,8 +122,12 @@ export function dispatchContinueAction(buttonElement) {
     return { success: false, reason: 'Button element is null or undefined' };
   }
 
+  if (isCancelElement(buttonElement)) {
+    return { success: false, reason: 'Refused to click cancel or negative element' };
+  }
+
   try {
-    buttonElement.focus?.();
+    // Explicitly do NOT call buttonElement.focus() to prevent focus leakage to media player controls
     buttonElement.click();
     return { success: true };
   } catch (err) {
