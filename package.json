@@ -1,6 +1,6 @@
 {
   "name": "youtube-auto-resume",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Manifest V3 browser extension to automatically resume YouTube playback paused by inactivity prompts.",
   "type": "module",
   "scripts": {

@@ -53,6 +53,7 @@
     const masterToggle = document.getElementById("master-toggle");
     const statusDot = document.getElementById("status-dot");
     const statusLabel = document.getElementById("status-label");
+    const statusSublabel = document.getElementById("status-sublabel");
     const openOptionsBtn = document.getElementById("open-options-btn");
     const versionText = document.getElementById("version-text");
     if (typeof chrome !== "undefined" && chrome.runtime?.getManifest) {
@@ -65,31 +66,50 @@
     if (masterToggle) {
       masterToggle.checked = settings.enabled;
     }
-    let isYouTubeTab = false;
+    let isYouTubeActive = false;
+    let hasBackgroundYouTubeTab = false;
     try {
       if (typeof chrome !== "undefined" && chrome.tabs?.query) {
         const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (activeTab?.url) {
           const url = new URL(activeTab.url);
-          isYouTubeTab = url.hostname.includes("youtube.com");
+          isYouTubeActive = url.hostname.includes("youtube.com");
+        }
+        const allYtTabs = await chrome.tabs.query({ url: "*://*.youtube.com/*" });
+        if (allYtTabs && allYtTabs.length > 0) {
+          hasBackgroundYouTubeTab = true;
         }
       }
     } catch {
-      isYouTubeTab = false;
+      isYouTubeActive = false;
+      hasBackgroundYouTubeTab = false;
     }
     function updateStatusDisplay(enabled) {
       if (!statusDot || !statusLabel) return;
-      if (!isYouTubeTab) {
-        statusDot.className = "status-dot warning";
-        statusLabel.textContent = "Active tab is not YouTube";
+      if (!enabled) {
+        statusDot.className = "status-dot inactive";
+        statusLabel.textContent = "Auto Resume Disabled";
+        if (statusSublabel) {
+          statusSublabel.textContent = "Toggle switch below to enable";
+        }
         return;
       }
-      if (enabled) {
-        statusDot.className = "status-dot active";
+      statusDot.className = "status-dot active";
+      if (isYouTubeActive) {
         statusLabel.textContent = "Active on YouTube";
+        if (statusSublabel) {
+          statusSublabel.textContent = "Monitoring this tab in foreground & background";
+        }
+      } else if (hasBackgroundYouTubeTab) {
+        statusLabel.textContent = "Auto Resume Active";
+        if (statusSublabel) {
+          statusSublabel.textContent = "Guarding YouTube in background tab";
+        }
       } else {
-        statusDot.className = "status-dot inactive";
-        statusLabel.textContent = "Auto Resume disabled";
+        statusLabel.textContent = "Auto Resume Active";
+        if (statusSublabel) {
+          statusSublabel.textContent = "Ready to resume YouTube when opened";
+        }
       }
     }
     updateStatusDisplay(settings.enabled);

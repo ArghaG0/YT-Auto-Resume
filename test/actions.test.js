@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { findContinueButton, dispatchContinueAction } from '../src/content/actions.js';
+import { findContinueButton, resolveClickableButton, dispatchContinueAction } from '../src/content/actions.js';
 
-describe('actions.js - Action & Shadow DOM Piercing Engine', () => {
+describe('actions.js - Action & Deep Shadow DOM Piercing Engine', () => {
   let promptContainer;
 
   beforeEach(() => {
@@ -24,7 +24,7 @@ describe('actions.js - Action & Shadow DOM Piercing Engine', () => {
     expect(btn?.id).toBe('target-btn');
   });
 
-  it('pierces open Shadow Root within Web Component to locate button', () => {
+  it('pierces open Shadow Root within single-level Web Component', () => {
     class MockCustomButtonRenderer extends HTMLElement {
       connectedCallback() {
         if (!this.shadowRoot) {
@@ -50,6 +50,65 @@ describe('actions.js - Action & Shadow DOM Piercing Engine', () => {
     const btn = findContinueButton(promptContainer);
     expect(btn).not.toBeNull();
     expect(btn?.id).toBe('shadow-inner-btn');
+  });
+
+  it('pierces multi-level nested Shadow Roots (renderer -> shape -> shadow -> button)', () => {
+    class MockShape extends HTMLElement {
+      connectedCallback() {
+        if (!this.shadowRoot) {
+          const shadow = this.attachShadow({ mode: 'open' });
+          const btn = document.createElement('button');
+          btn.id = 'nested-shape-btn';
+          btn.textContent = 'Yes';
+          shadow.appendChild(btn);
+        }
+      }
+    }
+
+    if (!customElements.get('mock-button-shape')) {
+      customElements.define('mock-button-shape', MockShape);
+    }
+
+    class MockParentRenderer extends HTMLElement {
+      connectedCallback() {
+        if (!this.shadowRoot) {
+          const shadow = this.attachShadow({ mode: 'open' });
+          const shape = document.createElement('mock-button-shape');
+          shadow.appendChild(shape);
+        }
+      }
+    }
+
+    if (!customElements.get('mock-parent-renderer')) {
+      customElements.define('mock-parent-renderer', MockParentRenderer);
+    }
+
+    promptContainer.innerHTML = `
+      <div id="buttons">
+        <mock-parent-renderer id="confirm-button"></mock-parent-renderer>
+      </div>
+    `;
+
+    const btn = findContinueButton(promptContainer);
+    expect(btn).not.toBeNull();
+    expect(btn?.id).toBe('nested-shape-btn');
+  });
+
+  it('respects maxDepth boundary during recursive resolution', () => {
+    const parent = document.createElement('div');
+    let curr = parent;
+    for (let i = 0; i < 6; i++) {
+      const child = document.createElement('div');
+      curr.appendChild(child);
+      curr = child;
+    }
+    const deepBtn = document.createElement('button');
+    deepBtn.id = 'too-deep-btn';
+    curr.appendChild(deepBtn);
+
+    // Default maxDepth is 4, depth of 7 will return null
+    const resolved = resolveClickableButton(parent, 0, 4);
+    expect(resolved).toBeNull();
   });
 
   it('ignores disabled button elements', () => {

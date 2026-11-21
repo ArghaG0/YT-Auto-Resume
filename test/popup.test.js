@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { getSettings, saveSettings } from '../src/common/storage.js';
 
-describe('popup.js - Toolbar Popup Logic', () => {
+describe('popup.js - Toolbar Popup Logic & Enhanced Status UI', () => {
   let mockStorage = {};
 
   beforeEach(() => {
@@ -31,18 +31,27 @@ describe('popup.js - Toolbar Popup Logic', () => {
         },
       },
       tabs: {
-        query: vi.fn(async () => [{ url: 'https://www.youtube.com/watch?v=test' }]),
+        query: vi.fn(async (queryInfo) => {
+          if (queryInfo?.active) {
+            return [{ url: 'https://www.youtube.com/watch?v=test' }];
+          }
+          if (queryInfo?.url) {
+            return [{ url: 'https://www.youtube.com/watch?v=test' }];
+          }
+          return [];
+        }),
       },
       runtime: {
-        getManifest: () => ({ version: '1.0.0' }),
+        getManifest: () => ({ version: '1.0.1' }),
         openOptionsPage: vi.fn(),
       },
     };
 
     document.body.innerHTML = `
-      <span id="version-text">v1.0.0</span>
+      <span id="version-text">v1.0.1</span>
       <span id="status-dot"></span>
       <span id="status-label"></span>
+      <span id="status-sublabel"></span>
       <input type="checkbox" id="master-toggle">
       <button id="open-options-btn"></button>
     `;
@@ -74,8 +83,13 @@ describe('popup.js - Toolbar Popup Logic', () => {
     expect(isYouTube).toBe(true);
   });
 
-  it('detects non-YouTube surface correctly', async () => {
-    chrome.tabs.query = vi.fn(async () => [{ url: 'https://www.google.com' }]);
+  it('detects non-YouTube surface correctly without throwing', async () => {
+    chrome.tabs.query = vi.fn(async (queryInfo) => {
+      if (queryInfo?.active) {
+        return [{ url: 'https://www.google.com' }];
+      }
+      return [];
+    });
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     const isYouTube = new URL(tab.url).hostname.includes('youtube.com');
 

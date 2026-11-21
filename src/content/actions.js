@@ -2,40 +2,70 @@
  * Action & Shadow DOM Piercing Engine
  */
 
-import { SELECTORS } from '../common/constants.js';
+import { SELECTORS, LIMITS } from '../common/constants.js';
 import { isElementVisible } from './detector.js';
 
 /**
- * Recursively locates the clickable native button within an element or its Shadow Roots.
+ * Recursively locates the clickable native button within an element, its children, or its Shadow Roots.
+ * Depth-bounded to prevent recursive runaway on malformed trees.
  * @param {Element} element
+ * @param {number} [depth=0]
+ * @param {number} [maxDepth=LIMITS.SHADOW_MAX_DEPTH]
  * @returns {HTMLButtonElement|Element|null}
  */
-export function resolveClickableButton(element) {
-  if (!element) return null;
+export function resolveClickableButton(element, depth = 0, maxDepth = LIMITS.SHADOW_MAX_DEPTH) {
+  if (!element || depth > maxDepth) return null;
 
-  // If the element hosts an open Shadow Root, inspect inside
-  if (element.shadowRoot) {
-    const shadowBtn = element.shadowRoot.querySelector(`${SELECTORS.NATIVE_BUTTON}, [role="button"]`);
-    if (shadowBtn) {
-      return isElementVisible(shadowBtn) && !shadowBtn.disabled ? shadowBtn : null;
-    }
-  }
+  // 1. Direct interactive check on the element itself
+  const tagName = element.tagName ? element.tagName.toLowerCase() : '';
+  const role = element.getAttribute ? element.getAttribute('role') : null;
+  const isDirectInteractive = tagName === 'button' || role === 'button';
 
-  // Check direct children for native button or role="button"
-  const directBtn = element.querySelector(`${SELECTORS.NATIVE_BUTTON}, [role="button"]`);
-  if (directBtn) {
-    return isElementVisible(directBtn) && !directBtn.disabled ? directBtn : null;
-  }
-
-  // If the element itself is interactive
-  const isInteractive = element.tagName.toLowerCase() === 'button' || 
-                        element.getAttribute('role') === 'button' ||
-                        element.tagName.toLowerCase().includes('button');
-  if (isInteractive) {
+  if (isDirectInteractive) {
     const isDisabled = element.disabled || element.getAttribute('aria-disabled') === 'true';
     if (isElementVisible(element) && !isDisabled) {
       return element;
     }
+    return null;
+  }
+
+  // 2. If the element hosts an open shadowRoot, search inside it
+  if (element.shadowRoot) {
+    // Check direct button in shadow root
+    const shadowNativeBtn = element.shadowRoot.querySelector(SELECTORS.NATIVE_BUTTON);
+    if (shadowNativeBtn && isElementVisible(shadowNativeBtn) && !shadowNativeBtn.disabled) {
+      return shadowNativeBtn;
+    }
+
+    const shadowRoleBtn = element.shadowRoot.querySelector('[role="button"]');
+    if (shadowRoleBtn && isElementVisible(shadowRoleBtn) && shadowRoleBtn.getAttribute('aria-disabled') !== 'true') {
+      return shadowRoleBtn;
+    }
+
+    // Traverse children inside shadowRoot
+    const shadowChildren = element.shadowRoot.children || [];
+    for (const child of shadowChildren) {
+      const resolved = resolveClickableButton(child, depth + 1, maxDepth);
+      if (resolved) return resolved;
+    }
+  }
+
+  // 3. Search direct native button or role="button" in light DOM
+  const directNativeBtn = element.querySelector(SELECTORS.NATIVE_BUTTON);
+  if (directNativeBtn && isElementVisible(directNativeBtn) && !directNativeBtn.disabled) {
+    return directNativeBtn;
+  }
+
+  const directRoleBtn = element.querySelector('[role="button"]');
+  if (directRoleBtn && isElementVisible(directRoleBtn) && directRoleBtn.getAttribute('aria-disabled') !== 'true') {
+    return directRoleBtn;
+  }
+
+  // 4. Recursively traverse child elements (e.g. yt-button-shape, wrappers)
+  const children = element.children || [];
+  for (const child of children) {
+    const resolved = resolveClickableButton(child, depth + 1, maxDepth);
+    if (resolved) return resolved;
   }
 
   return null;
@@ -43,7 +73,7 @@ export function resolveClickableButton(element) {
 
 /**
  * Finds the explicit continuation button within the confirmed prompt.
- * Traverses Web Component shadow boundaries.
+ * Traverses Web Component shadow boundaries recursively.
  * @param {Element} promptElement
  * @returns {HTMLButtonElement|Element|null}
  */
@@ -75,6 +105,7 @@ export function findContinueButton(promptElement) {
 
 /**
  * Dispatches a programmatic synthetic click event to activate the continuation button.
+ * Preserves standard .click() without pointer event simulation.
  * @param {Element} buttonElement
  * @returns {{ success: boolean, reason?: string }}
  */

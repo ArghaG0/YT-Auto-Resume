@@ -1,7 +1,7 @@
 # YouTube Auto Resume
 
 [![CI](https://github.com/ArghaG0/YT-Auto-Resume/actions/workflows/ci.yml/badge.svg)](https://github.com/ArghaG0/YT-Auto-Resume/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/ArghaG0/YT-Auto-Resume/releases)
+[![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/ArghaG0/YT-Auto-Resume/releases)
 [![Manifest V3](https://img.shields.io/badge/manifest-v3-green.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
 
 A lightweight, privacy-first **Manifest V3** browser extension that automatically confirms YouTube's inactivity interruption (*"Video paused. Continue watching?"*), keeping background music and long videos playing seamlessly without overriding intentional user pauses.
@@ -13,11 +13,15 @@ Distributed directly via **GitHub Releases** for Chromium-based browsers (Chrome
 ## Features
 
 - **i18n-Resilient Detection:** Recognizes YouTube's Web Component hierarchy (`<ytd-popup-container yt-confirm-dialog-renderer>`) without depending on English-only text matching. Works across all interface languages (English, Spanish, German, Japanese, Hindi, French, etc.).
-- **Shadow DOM Traversal:** Recursively traverses open Shadow Roots (`#shadow-root (open)`) within custom elements (`<yt-button-renderer>`) to activate the actual interactive button.
+- **Deep Shadow DOM Piercing:** Recursively traverses open Shadow Roots (`#shadow-root (open)`) across nested Web Components (`<yt-button-renderer>` $\rightarrow$ `<yt-button-shape>` $\rightarrow$ `<button>`) to activate the actual interactive button.
+- **Minimized Window Resilience (v1.0.1):** Features a bounded debounce engine (200ms upper ceiling) that counteracts Chromium's background timer clamping ($\ge 1,000\text{ ms}$) when windows are minimized or occluded on Windows, preventing timer starvation when video audio pauses.
+- **Two-Phase Playback Verification (v1.0.1):** Separates button click dispatch from playback verification. Actively monitors the `<video>` element for resumption within 1,500ms before marking the prompt handled.
+- **Controlled Retries with Concurrency Protection (v1.0.1):** Reversible deduplication leases allow up to 3 controlled retries if YouTube delays playback resumption, preventing permanent lockout.
+- **Observer Health & Disconnection Recovery (v1.0.1):** Detects detached `<ytd-popup-container>` nodes during YouTube SPA route transitions and automatically re-attaches observers to replacement containers.
+- **100% Diagnostic Observability (v1.0.1):** Captures 24 granular diagnostic event types (initialization, occlusion, button resolution, click dispatch, playback verification, retries, and error handling) in a local FIFO ring buffer.
+- **Clear Background Status UI (v1.0.1):** Toolbar popup displays reassuring green protection status whether browsing YouTube or multitasking across other background tabs.
 - **Fail-Closed Safety:** Never clicks unrelated buttons (e.g. channel unsubscribe, playlist delete, or dismiss). Normal user pauses (spacebar, click, media keys) always remain paused.
-- **Background Tab Execution:** Relies on microtask-driven DOM observation rather than clamped timer loops, executing promptly even when YouTube is minimized or playing in the background.
 - **100% Private & Local:** Zero analytics, telemetry, or external network requests. Settings and bounded diagnostics remain strictly on your local machine.
-- **Bounded Diagnostics Console:** An optional local diagnostic log viewer (capped at 50 events / ≤ 100 KB) available directly in the Options page.
 
 ---
 
@@ -27,7 +31,7 @@ Because this extension is open-source and distributed via GitHub Releases (not t
 
 ### Step 1: Download & Extract
 1. Go to the [Releases](https://github.com/ArghaG0/YT-Auto-Resume/releases) page.
-2. Under **Assets**, download **`youtube-auto-resume-v1.0.0.zip`** (ensure you download this packaged asset, not the generic "Source code" zip).
+2. Under **Assets**, download **`youtube-auto-resume-v1.0.1.zip`** (ensure you download this packaged asset, not the generic "Source code" zip).
 3. Extract the ZIP file to a permanent folder on your drive (e.g., `Documents/BrowserExtensions/YouTubeAutoResume`).
 
 ### Step 2: Load into Browser

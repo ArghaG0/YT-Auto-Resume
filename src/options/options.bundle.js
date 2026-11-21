@@ -49,7 +49,9 @@
   }
 
   // src/common/logger.js
+  var logQueue = Promise.resolve();
   async function getDiagnosticLogs() {
+    await logQueue;
     try {
       if (typeof chrome === "undefined" || !chrome.storage?.local) {
         return [];
@@ -61,14 +63,17 @@
     }
   }
   async function clearDiagnosticLogs() {
-    try {
-      if (typeof chrome === "undefined" || !chrome.storage?.local) {
-        return;
+    logQueue = logQueue.then(async () => {
+      try {
+        if (typeof chrome === "undefined" || !chrome.storage?.local) {
+          return;
+        }
+        await chrome.storage.local.set({ [STORAGE_KEYS.DIAGNOSTICS]: [] });
+      } catch (err) {
+        console.error("[YouTube Auto Resume] Failed to clear diagnostics:", err);
       }
-      await chrome.storage.local.set({ [STORAGE_KEYS.DIAGNOSTICS]: [] });
-    } catch (err) {
-      console.error("[YouTube Auto Resume] Failed to clear diagnostics:", err);
-    }
+    });
+    return logQueue;
   }
 
   // src/options/options.js

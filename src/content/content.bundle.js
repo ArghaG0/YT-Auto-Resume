@@ -21,16 +21,46 @@
     DIAGNOSTICS: "yt_auto_resume_diagnostics"
   };
   var DIAGNOSTIC_EVENTS = {
+    // Lifecycle & Configuration
+    CONTENT_SCRIPT_INITIALIZED: "content_script_initialized",
+    SETTINGS_UPDATED: "settings_updated",
+    NAVIGATION_RESET: "navigation_reset",
+    WINDOW_OCCLUDED: "window_occluded",
+    WINDOW_RESTORED: "window_restored",
+    // DOM Observation & Container Health
+    CONTAINER_BOOTSTRAP_WATCHING: "container_bootstrap_watching",
+    CONTAINER_OBSERVED: "container_observed",
+    CONTAINER_DISCONNECTED: "container_disconnected",
+    CONTAINER_RECONNECTED: "container_reconnected",
+    // Debouncing & Throttling
+    DEBOUNCE_MAX_WAIT_TRIGGERED: "debounce_max_wait_triggered",
+    // Detection & Gating
     PROMPT_DETECTED: "prompt_detected",
-    CONTINUE_CLICKED: "continue_clicked",
+    PROMPT_ALREADY_HANDLED: "prompt_already_handled",
     AMBIGUOUS_PROMPT_IGNORED: "ambiguous_prompt_ignored",
     COOLDOWN_THROTTLED: "cooldown_throttled",
-    USER_PAUSE_IGNORED: "user_pause_ignored"
+    EVALUATION_SKIPPED_DISABLED: "evaluation_skipped_disabled",
+    // Button Resolution & Action
+    BUTTON_RESOLVED_SHADOW: "button_resolved_shadow",
+    BUTTON_NOT_FOUND: "button_not_found",
+    CONTINUE_CLICKED: "continue_clicked",
+    CLICK_DISPATCH_FAILED: "click_dispatch_failed",
+    // Playback Verification & Retries
+    PLAYBACK_VERIFIED: "playback_verified",
+    PLAYBACK_VERIFY_FAILED: "playback_verify_failed",
+    RETRY_ATTEMPTED: "retry_attempted",
+    RETRY_EXHAUSTED: "retry_exhausted",
+    ACTION_EXECUTION_ERROR: "action_execution_error"
   };
   var LIMITS = {
     MAX_DIAGNOSTICS_ENTRIES: 50,
     COOLDOWN_MS: 3e3,
-    DEBOUNCE_MS: 50
+    DEBOUNCE_MS: 50,
+    MAX_DEBOUNCE_WAIT_MS: 200,
+    VERIFICATION_TIMEOUT_MS: 1500,
+    MAX_RETRIES: 3,
+    RETRY_DELAY_MS: 1e3,
+    SHADOW_MAX_DEPTH: 4
   };
 
   // src/common/storage.js
@@ -76,27 +106,31 @@
   }
 
   // src/common/logger.js
+  var logQueue = Promise.resolve();
   async function logDiagnosticEvent(event, details = "") {
-    try {
-      const settings = await getSettings();
-      if (!settings.diagnosticsEnabled) {
-        return;
+    logQueue = logQueue.then(async () => {
+      try {
+        const settings = await getSettings();
+        if (!settings.diagnosticsEnabled) {
+          return;
+        }
+        if (typeof chrome === "undefined" || !chrome.storage?.local) {
+          return;
+        }
+        const result = await chrome.storage.local.get(STORAGE_KEYS.DIAGNOSTICS);
+        const existingLogs = Array.isArray(result?.[STORAGE_KEYS.DIAGNOSTICS]) ? result[STORAGE_KEYS.DIAGNOSTICS] : [];
+        const newEntry = {
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          event,
+          details: typeof details === "string" ? details : JSON.stringify(details)
+        };
+        const updatedLogs = [...existingLogs, newEntry].slice(-LIMITS.MAX_DIAGNOSTICS_ENTRIES);
+        await chrome.storage.local.set({ [STORAGE_KEYS.DIAGNOSTICS]: updatedLogs });
+      } catch (err) {
+        console.warn("[YouTube Auto Resume] Diagnostics log failed:", err);
       }
-      if (typeof chrome === "undefined" || !chrome.storage?.local) {
-        return;
-      }
-      const result = await chrome.storage.local.get(STORAGE_KEYS.DIAGNOSTICS);
-      const existingLogs = Array.isArray(result?.[STORAGE_KEYS.DIAGNOSTICS]) ? result[STORAGE_KEYS.DIAGNOSTICS] : [];
-      const newEntry = {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        event,
-        details: typeof details === "string" ? details : JSON.stringify(details)
-      };
-      const updatedLogs = [...existingLogs, newEntry].slice(-LIMITS.MAX_DIAGNOSTICS_ENTRIES);
-      await chrome.storage.local.set({ [STORAGE_KEYS.DIAGNOSTICS]: updatedLogs });
-    } catch (err) {
-      console.warn("[YouTube Auto Resume] Diagnostics log failed:", err);
-    }
+    });
+    return logQueue;
   }
 
   // src/content/detector.js
@@ -166,24 +200,45 @@
   }
 
   // src/content/actions.js
-  function resolveClickableButton(element) {
-    if (!element) return null;
-    if (element.shadowRoot) {
-      const shadowBtn = element.shadowRoot.querySelector(`${SELECTORS.NATIVE_BUTTON}, [role="button"]`);
-      if (shadowBtn) {
-        return isElementVisible(shadowBtn) && !shadowBtn.disabled ? shadowBtn : null;
-      }
-    }
-    const directBtn = element.querySelector(`${SELECTORS.NATIVE_BUTTON}, [role="button"]`);
-    if (directBtn) {
-      return isElementVisible(directBtn) && !directBtn.disabled ? directBtn : null;
-    }
-    const isInteractive = element.tagName.toLowerCase() === "button" || element.getAttribute("role") === "button" || element.tagName.toLowerCase().includes("button");
-    if (isInteractive) {
+  function resolveClickableButton(element, depth = 0, maxDepth = LIMITS.SHADOW_MAX_DEPTH) {
+    if (!element || depth > maxDepth) return null;
+    const tagName = element.tagName ? element.tagName.toLowerCase() : "";
+    const role = element.getAttribute ? element.getAttribute("role") : null;
+    const isDirectInteractive = tagName === "button" || role === "button";
+    if (isDirectInteractive) {
       const isDisabled = element.disabled || element.getAttribute("aria-disabled") === "true";
       if (isElementVisible(element) && !isDisabled) {
         return element;
       }
+      return null;
+    }
+    if (element.shadowRoot) {
+      const shadowNativeBtn = element.shadowRoot.querySelector(SELECTORS.NATIVE_BUTTON);
+      if (shadowNativeBtn && isElementVisible(shadowNativeBtn) && !shadowNativeBtn.disabled) {
+        return shadowNativeBtn;
+      }
+      const shadowRoleBtn = element.shadowRoot.querySelector('[role="button"]');
+      if (shadowRoleBtn && isElementVisible(shadowRoleBtn) && shadowRoleBtn.getAttribute("aria-disabled") !== "true") {
+        return shadowRoleBtn;
+      }
+      const shadowChildren = element.shadowRoot.children || [];
+      for (const child of shadowChildren) {
+        const resolved = resolveClickableButton(child, depth + 1, maxDepth);
+        if (resolved) return resolved;
+      }
+    }
+    const directNativeBtn = element.querySelector(SELECTORS.NATIVE_BUTTON);
+    if (directNativeBtn && isElementVisible(directNativeBtn) && !directNativeBtn.disabled) {
+      return directNativeBtn;
+    }
+    const directRoleBtn = element.querySelector('[role="button"]');
+    if (directRoleBtn && isElementVisible(directRoleBtn) && directRoleBtn.getAttribute("aria-disabled") !== "true") {
+      return directRoleBtn;
+    }
+    const children = element.children || [];
+    for (const child of children) {
+      const resolved = resolveClickableButton(child, depth + 1, maxDepth);
+      if (resolved) return resolved;
     }
     return null;
   }
@@ -227,7 +282,9 @@
      */
     constructor(cooldownMs = LIMITS.COOLDOWN_MS) {
       this.cooldownMs = cooldownMs;
+      this.pendingPrompts = /* @__PURE__ */ new WeakSet();
       this.handledPrompts = /* @__PURE__ */ new WeakSet();
+      this.activePrompts = /* @__PURE__ */ new Set();
       this.lastActionTimestamp = 0;
     }
     /**
@@ -237,6 +294,9 @@
      */
     canAct(promptElement) {
       if (!promptElement) return false;
+      if (this.pendingPrompts.has(promptElement)) {
+        return false;
+      }
       if (this.handledPrompts.has(promptElement)) {
         return false;
       }
@@ -250,17 +310,60 @@
       return true;
     }
     /**
-     * Marks a prompt element as handled and updates cooldown timestamp.
+     * Marks a prompt element as pending playback verification.
+     * Locks out concurrent duplicate clicks during the verification window.
      * @param {Element} promptElement
      */
-    markHandled(promptElement) {
+    markPending(promptElement) {
       if (!promptElement) return;
+      this.pendingPrompts.add(promptElement);
+      this.activePrompts.add(promptElement);
+    }
+    /**
+     * Checks whether a prompt is currently pending verification.
+     * @param {Element} promptElement
+     * @returns {boolean}
+     */
+    isPending(promptElement) {
+      if (!promptElement) return false;
+      return this.pendingPrompts.has(promptElement);
+    }
+    /**
+     * Marks a prompt element as successfully handled and updates cooldown timestamp.
+     * @param {Element} promptElement
+     */
+    markSuccess(promptElement) {
+      if (!promptElement) return;
+      this.pendingPrompts.delete(promptElement);
       this.handledPrompts.add(promptElement);
+      this.activePrompts.add(promptElement);
       try {
         promptElement.setAttribute("data-auto-resume-handled", "true");
       } catch {
       }
       this.lastActionTimestamp = Date.now();
+    }
+    /**
+     * Alias for markSuccess to maintain backward compatibility.
+     * @param {Element} promptElement
+     */
+    markHandled(promptElement) {
+      this.markSuccess(promptElement);
+    }
+    /**
+     * Releases verification lock and strips handled attributes, allowing retries.
+     * @param {Element} promptElement
+     */
+    unmark(promptElement) {
+      if (!promptElement) return;
+      this.pendingPrompts.delete(promptElement);
+      this.handledPrompts.delete(promptElement);
+      try {
+        if (promptElement.hasAttribute("data-auto-resume-handled")) {
+          promptElement.removeAttribute("data-auto-resume-handled");
+        }
+      } catch {
+      }
     }
     /**
      * Checks if a cooldown period is currently active.
@@ -270,10 +373,21 @@
       return Date.now() - this.lastActionTimestamp < this.cooldownMs;
     }
     /**
-     * Resets deduplication state (e.g. on navigation or dialog removal).
+     * Resets all deduplication and cooldown state, cleaning up DOM markers.
      */
     reset() {
       this.lastActionTimestamp = 0;
+      this.pendingPrompts = /* @__PURE__ */ new WeakSet();
+      this.handledPrompts = /* @__PURE__ */ new WeakSet();
+      for (const el of this.activePrompts) {
+        try {
+          if (el && el.removeAttribute) {
+            el.removeAttribute("data-auto-resume-handled");
+          }
+        } catch {
+        }
+      }
+      this.activePrompts.clear();
     }
   };
 
@@ -285,7 +399,10 @@
       this.scopedObserver = null;
       this.bootstrapObserver = null;
       this.debounceTimer = null;
+      this.debounceStartTime = 0;
+      this.isProcessing = false;
       this.isInitialized = false;
+      this.visibilityListener = null;
     }
     /**
      * Initializes settings, listeners, and starts DOM observation.
@@ -294,14 +411,37 @@
       if (this.isInitialized) return;
       this.isInitialized = true;
       this.settings = await getSettings();
-      onSettingsChanged((newSettings) => {
+      await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTENT_SCRIPT_INITIALIZED, {
+        version: "1.0.1",
+        enabled: this.settings?.enabled
+      });
+      onSettingsChanged(async (newSettings) => {
         this.settings = newSettings;
+        await logDiagnosticEvent(DIAGNOSTIC_EVENTS.SETTINGS_UPDATED, {
+          enabled: newSettings.enabled,
+          youtubeEnabled: newSettings.youtubeEnabled
+        });
         if (!this.settings.enabled) {
           this.deduplicator.reset();
         }
       });
       this.setupNavigationListeners();
+      this.setupVisibilityTracking();
       this.startObservation();
+    }
+    /**
+     * Tracks tab occlusion state (minimized vs visible window).
+     */
+    setupVisibilityTracking() {
+      if (typeof document === "undefined") return;
+      this.visibilityListener = () => {
+        const isHidden = document.hidden || document.visibilityState === "hidden";
+        logDiagnosticEvent(
+          isHidden ? DIAGNOSTIC_EVENTS.WINDOW_OCCLUDED : DIAGNOSTIC_EVENTS.WINDOW_RESTORED,
+          { visibilityState: document.visibilityState, hidden: document.hidden }
+        );
+      };
+      document.addEventListener("visibilitychange", this.visibilityListener);
     }
     /**
      * Listens to YouTube's SPA navigation events to reset cooldown state.
@@ -310,9 +450,11 @@
       if (typeof window === "undefined") return;
       window.addEventListener("yt-navigate-finish", () => {
         this.deduplicator.reset();
+        logDiagnosticEvent(DIAGNOSTIC_EVENTS.NAVIGATION_RESET, { event: "yt-navigate-finish" });
       });
       window.addEventListener("yt-page-data-updated", () => {
         this.deduplicator.reset();
+        logDiagnosticEvent(DIAGNOSTIC_EVENTS.NAVIGATION_RESET, { event: "yt-page-data-updated" });
       });
     }
     /**
@@ -321,17 +463,22 @@
     startObservation() {
       if (typeof document === "undefined") return;
       const popupContainer = document.querySelector(SELECTORS.POPUP_CONTAINER);
-      if (popupContainer) {
+      if (popupContainer && popupContainer.isConnected) {
         this.attachScopedObserver(popupContainer);
         return;
       }
       const targetRoot = document.body || document.documentElement;
       if (!targetRoot) return;
+      if (this.bootstrapObserver) {
+        this.bootstrapObserver.disconnect();
+      }
+      logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTAINER_BOOTSTRAP_WATCHING);
       this.bootstrapObserver = new MutationObserver(() => {
         const container = document.querySelector(SELECTORS.POPUP_CONTAINER);
-        if (container) {
+        if (container && container.isConnected) {
           this.bootstrapObserver?.disconnect();
           this.bootstrapObserver = null;
+          logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTAINER_RECONNECTED);
           this.attachScopedObserver(container);
         }
       });
@@ -348,8 +495,8 @@
       if (this.scopedObserver) {
         this.scopedObserver.disconnect();
       }
-      this.scopedObserver = new MutationObserver(() => {
-        this.handleMutations(popupContainer);
+      this.scopedObserver = new MutationObserver((mutations) => {
+        this.handleMutations(popupContainer, mutations);
       });
       this.scopedObserver.observe(popupContainer, {
         childList: true,
@@ -357,29 +504,128 @@
         attributes: true,
         attributeFilter: ["style", "class", "aria-hidden"]
       });
-      this.handleMutations(popupContainer);
+      logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTAINER_OBSERVED);
+      this.handleMutations(popupContainer, []);
     }
     /**
-     * Debounced mutation handler to evaluate prompts.
+     * Health check to ensure the observed container has not been detached by YouTube SPA routing.
      * @param {Element} popupContainer
+     * @returns {boolean}
      */
-    handleMutations(popupContainer) {
+    checkContainerHealth(popupContainer) {
+      if (!popupContainer || !popupContainer.isConnected) {
+        logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTAINER_DISCONNECTED);
+        if (this.scopedObserver) {
+          this.scopedObserver.disconnect();
+          this.scopedObserver = null;
+        }
+        this.startObservation();
+        return false;
+      }
+      return true;
+    }
+    /**
+     * Bounded debounce mutation handler.
+     * Caps maximum debounce delay to prevent timer starvation under background window occlusion.
+     * @param {Element} popupContainer
+     * @param {MutationRecord[]} [mutations=[]]
+     */
+    handleMutations(popupContainer, mutations = []) {
+      if (!this.checkContainerHealth(popupContainer)) return;
+      const now = Date.now();
+      if (!this.debounceStartTime) {
+        this.debounceStartTime = now;
+      }
+      let containsDialogInjection = false;
+      if (Array.isArray(mutations)) {
+        for (const m of mutations) {
+          if (m.addedNodes && m.addedNodes.length > 0) {
+            for (const node of m.addedNodes) {
+              if (node.nodeType === 1) {
+                const tag = (node.tagName || "").toLowerCase();
+                if (tag === "yt-confirm-dialog-renderer" || tag === "tp-yt-paper-dialog" || node.querySelector?.(SELECTORS.CONFIRM_DIALOG_RENDERER)) {
+                  containsDialogInjection = true;
+                  break;
+                }
+              }
+            }
+          }
+          if (containsDialogInjection) break;
+        }
+      }
+      const elapsed = now - this.debounceStartTime;
+      const shouldFlushImmediately = containsDialogInjection || elapsed >= LIMITS.MAX_DEBOUNCE_WAIT_MS;
+      if (shouldFlushImmediately) {
+        if (this.debounceTimer) {
+          clearTimeout(this.debounceTimer);
+          this.debounceTimer = null;
+        }
+        this.debounceStartTime = 0;
+        if (elapsed >= LIMITS.MAX_DEBOUNCE_WAIT_MS) {
+          logDiagnosticEvent(DIAGNOSTIC_EVENTS.DEBOUNCE_MAX_WAIT_TRIGGERED, { elapsed });
+        }
+        this.evaluatePrompt(popupContainer);
+        return;
+      }
       if (this.debounceTimer) {
         clearTimeout(this.debounceTimer);
       }
       this.debounceTimer = setTimeout(() => {
+        this.debounceTimer = null;
+        this.debounceStartTime = 0;
         this.evaluatePrompt(popupContainer);
       }, LIMITS.DEBOUNCE_MS);
     }
     /**
-     * Evaluates and acts on detected prompts if extension is enabled.
+     * Verifies that the video player has actively resumed playback.
+     * @param {number} [timeoutMs=LIMITS.VERIFICATION_TIMEOUT_MS]
+     * @returns {Promise<boolean>}
+     */
+    async verifyPlaybackResumption(timeoutMs = LIMITS.VERIFICATION_TIMEOUT_MS) {
+      if (typeof document === "undefined") return true;
+      const video = document.querySelector("video");
+      if (!video) {
+        return true;
+      }
+      if (!video.paused && !video.ended && video.readyState >= 2) {
+        return true;
+      }
+      return new Promise((resolve) => {
+        let timer = null;
+        const onPlaying = () => {
+          cleanup();
+          resolve(true);
+        };
+        const onTimeUpdate = () => {
+          if (!video.paused) {
+            cleanup();
+            resolve(true);
+          }
+        };
+        const cleanup = () => {
+          if (timer) clearTimeout(timer);
+          video.removeEventListener("playing", onPlaying);
+          video.removeEventListener("timeupdate", onTimeUpdate);
+        };
+        timer = setTimeout(() => {
+          cleanup();
+          resolve(!video.paused);
+        }, timeoutMs);
+        video.addEventListener("playing", onPlaying, { once: true });
+        video.addEventListener("timeupdate", onTimeUpdate);
+      });
+    }
+    /**
+     * Evaluates detected prompts with concurrency protection, verification, and controlled retries.
      * @param {Element} popupContainer
      */
     async evaluatePrompt(popupContainer) {
+      if (this.isProcessing) return;
+      if (!this.checkContainerHealth(popupContainer)) return;
       const detection = detectInactivityPrompt(popupContainer);
       if (detection.status === "confirmed" && detection.promptElement) {
         if (!this.settings || !this.settings.enabled) {
-          console.log("[YouTube Auto Resume] Inactivity prompt detected, but extension is disabled in popup.");
+          await logDiagnosticEvent(DIAGNOSTIC_EVENTS.EVALUATION_SKIPPED_DISABLED);
           return;
         }
         if (!this.settings.youtubeEnabled) {
@@ -388,17 +634,75 @@
         if (!this.deduplicator.canAct(detection.promptElement)) {
           if (this.deduplicator.isCooldownActive()) {
             await logDiagnosticEvent(DIAGNOSTIC_EVENTS.COOLDOWN_THROTTLED);
+          } else {
+            await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PROMPT_ALREADY_HANDLED);
           }
           return;
         }
         const button = findContinueButton(detection.promptElement);
-        if (button) {
+        if (!button) {
+          await logDiagnosticEvent(DIAGNOSTIC_EVENTS.BUTTON_NOT_FOUND, {
+            childrenCount: detection.promptElement.children.length
+          });
+          return;
+        }
+        await logDiagnosticEvent(DIAGNOSTIC_EVENTS.BUTTON_RESOLVED_SHADOW, {
+          tag: button.tagName?.toLowerCase(),
+          id: button.id || void 0,
+          role: button.getAttribute("role") || void 0
+        });
+        this.isProcessing = true;
+        this.deduplicator.markPending(detection.promptElement);
+        try {
           await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PROMPT_DETECTED);
-          const actionResult = dispatchContinueAction(button);
-          if (actionResult.success) {
-            this.deduplicator.markHandled(detection.promptElement);
-            await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTINUE_CLICKED);
+          let attempt = 0;
+          let resumed = false;
+          while (attempt < LIMITS.MAX_RETRIES && !resumed) {
+            attempt++;
+            if (attempt > 1) {
+              await logDiagnosticEvent(DIAGNOSTIC_EVENTS.RETRY_ATTEMPTED, { attempt });
+            }
+            const activeBtn = attempt === 1 ? button : findContinueButton(detection.promptElement);
+            if (!activeBtn) {
+              await logDiagnosticEvent(DIAGNOSTIC_EVENTS.BUTTON_NOT_FOUND, { attempt });
+              break;
+            }
+            const actionResult = dispatchContinueAction(activeBtn);
+            if (!actionResult.success) {
+              await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CLICK_DISPATCH_FAILED, {
+                attempt,
+                reason: actionResult.reason
+              });
+              if (attempt < LIMITS.MAX_RETRIES) {
+                await new Promise((r) => setTimeout(r, LIMITS.RETRY_DELAY_MS));
+              }
+              continue;
+            }
+            await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTINUE_CLICKED, { attempt });
+            resumed = await this.verifyPlaybackResumption(LIMITS.VERIFICATION_TIMEOUT_MS);
+            if (resumed) {
+              this.deduplicator.markSuccess(detection.promptElement);
+              await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PLAYBACK_VERIFIED, { attempt });
+              break;
+            } else {
+              await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PLAYBACK_VERIFY_FAILED, { attempt });
+              if (attempt < LIMITS.MAX_RETRIES) {
+                await new Promise((r) => setTimeout(r, LIMITS.RETRY_DELAY_MS));
+              }
+            }
           }
+          if (!resumed) {
+            this.deduplicator.unmark(detection.promptElement);
+            await logDiagnosticEvent(DIAGNOSTIC_EVENTS.RETRY_EXHAUSTED, { attempts: attempt });
+          }
+        } catch (err) {
+          this.deduplicator.unmark(detection.promptElement);
+          await logDiagnosticEvent(DIAGNOSTIC_EVENTS.ACTION_EXECUTION_ERROR, {
+            error: err instanceof Error ? err.message : String(err)
+          });
+          console.error("[YouTube Auto Resume] Action execution error:", err);
+        } finally {
+          this.isProcessing = false;
         }
       } else if (detection.status === "ambiguous") {
         await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AMBIGUOUS_PROMPT_IGNORED);
@@ -420,13 +724,21 @@
         clearTimeout(this.debounceTimer);
         this.debounceTimer = null;
       }
+      if (this.visibilityListener && typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", this.visibilityListener);
+        this.visibilityListener = null;
+      }
       this.deduplicator.reset();
+      this.isProcessing = false;
+      this.debounceStartTime = 0;
       this.isInitialized = false;
     }
   };
   if (typeof window !== "undefined" && typeof document !== "undefined") {
-    console.log("[YouTube Auto Resume] Content script initialized v1.0.0");
-    const coordinator = new YouTubeAutoResumeCoordinator();
-    coordinator.init();
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      console.log("[YouTube Auto Resume] Content script initialized v1.0.1");
+      const coordinator = new YouTubeAutoResumeCoordinator();
+      coordinator.init();
+    }
   }
 })();
