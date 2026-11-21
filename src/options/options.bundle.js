@@ -12,38 +12,58 @@
   };
 
   // src/common/storage.js
+  var settingsCache = null;
+  function isExtensionContextValid() {
+    if (typeof chrome === "undefined" || !chrome) {
+      return false;
+    }
+    if ("runtime" in chrome && chrome.runtime) {
+      return Boolean(chrome.runtime.id);
+    }
+    return Boolean(chrome.storage);
+  }
   async function getSettings() {
     try {
-      if (typeof chrome === "undefined" || !chrome.storage?.local) {
-        return { ...DEFAULT_SETTINGS };
+      if (!isExtensionContextValid() || !chrome.storage?.local) {
+        return settingsCache ? { ...settingsCache } : { ...DEFAULT_SETTINGS };
       }
       const result = await chrome.storage.local.get(STORAGE_KEYS.SETTINGS);
       const stored = result?.[STORAGE_KEYS.SETTINGS];
       if (!stored || typeof stored !== "object") {
+        settingsCache = { ...DEFAULT_SETTINGS };
         return { ...DEFAULT_SETTINGS };
       }
-      return {
+      const resolved = {
         enabled: typeof stored.enabled === "boolean" ? stored.enabled : DEFAULT_SETTINGS.enabled,
         youtubeEnabled: typeof stored.youtubeEnabled === "boolean" ? stored.youtubeEnabled : DEFAULT_SETTINGS.youtubeEnabled,
         youtubeMusicEnabled: typeof stored.youtubeMusicEnabled === "boolean" ? stored.youtubeMusicEnabled : DEFAULT_SETTINGS.youtubeMusicEnabled,
         diagnosticsEnabled: typeof stored.diagnosticsEnabled === "boolean" ? stored.diagnosticsEnabled : DEFAULT_SETTINGS.diagnosticsEnabled
       };
+      settingsCache = { ...resolved };
+      return resolved;
     } catch (err) {
-      console.warn("[YouTube Auto Resume] Error reading settings, falling back to defaults:", err);
-      return { ...DEFAULT_SETTINGS };
+      const isInvalidated = err instanceof Error && err.message?.includes("Extension context invalidated");
+      if (!isInvalidated) {
+        console.warn("[YouTube Auto Resume] Error reading settings, falling back to defaults:", err);
+      }
+      return settingsCache ? { ...settingsCache } : { ...DEFAULT_SETTINGS };
     }
   }
   async function saveSettings(partialSettings) {
     try {
-      if (typeof chrome === "undefined" || !chrome.storage?.local) {
+      if (!isExtensionContextValid() || !chrome.storage?.local) {
         return false;
       }
       const current = await getSettings();
       const updated = { ...current, ...partialSettings };
       await chrome.storage.local.set({ [STORAGE_KEYS.SETTINGS]: updated });
+      settingsCache = { ...updated };
       return true;
     } catch (err) {
-      console.error("[YouTube Auto Resume] Failed to save settings:", err);
+      const isInvalidated = err instanceof Error && err.message?.includes("Extension context invalidated");
+      if (!isInvalidated) {
+        console.error("[YouTube Auto Resume] Failed to save settings:", err);
+      }
       return false;
     }
   }
@@ -51,26 +71,39 @@
   // src/common/logger.js
   var logQueue = Promise.resolve();
   async function getDiagnosticLogs() {
+    if (!isExtensionContextValid()) {
+      return [];
+    }
     await logQueue;
     try {
-      if (typeof chrome === "undefined" || !chrome.storage?.local) {
+      if (!isExtensionContextValid() || !chrome.storage?.local) {
         return [];
       }
       const result = await chrome.storage.local.get(STORAGE_KEYS.DIAGNOSTICS);
       return Array.isArray(result?.[STORAGE_KEYS.DIAGNOSTICS]) ? result[STORAGE_KEYS.DIAGNOSTICS] : [];
-    } catch {
+    } catch (err) {
+      const isInvalidated = err instanceof Error && err.message?.includes("Extension context invalidated");
+      if (!isInvalidated) {
+        console.warn("[YouTube Auto Resume] Failed to get diagnostic logs:", err);
+      }
       return [];
     }
   }
   async function clearDiagnosticLogs() {
+    if (!isExtensionContextValid()) {
+      return Promise.resolve();
+    }
     logQueue = logQueue.then(async () => {
       try {
-        if (typeof chrome === "undefined" || !chrome.storage?.local) {
+        if (!isExtensionContextValid() || !chrome.storage?.local) {
           return;
         }
         await chrome.storage.local.set({ [STORAGE_KEYS.DIAGNOSTICS]: [] });
       } catch (err) {
-        console.error("[YouTube Auto Resume] Failed to clear diagnostics:", err);
+        const isInvalidated = err instanceof Error && err.message?.includes("Extension context invalidated");
+        if (!isInvalidated) {
+          console.error("[YouTube Auto Resume] Failed to clear diagnostics:", err);
+        }
       }
     });
     return logQueue;

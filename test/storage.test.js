@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { getSettings, saveSettings } from '../src/common/storage.js';
-import { logDiagnosticEvent, getDiagnosticLogs, clearDiagnosticLogs } from '../src/common/logger.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { getSettings, saveSettings, isExtensionContextValid } from '../src/common/storage.js';
+import { logDiagnosticEvent, getDiagnosticLogs, clearDiagnosticLogs, updateCachedSettings } from '../src/common/logger.js';
 import { DEFAULT_SETTINGS, LIMITS } from '../src/common/constants.js';
 
 describe('storage.js & logger.js - Storage and Bounded Diagnostics', () => {
@@ -8,22 +8,45 @@ describe('storage.js & logger.js - Storage and Bounded Diagnostics', () => {
 
   beforeEach(() => {
     mockStorage = {};
-    // Setup mock chrome.storage.local
+    updateCachedSettings(null);
+    // Setup mock chrome.runtime and chrome.storage.local
     globalThis.chrome = {
+      runtime: {
+        id: 'mock-extension-id',
+      },
       storage: {
         local: {
-          get: async (keys) => {
+          get: vi.fn(async (keys) => {
             if (typeof keys === 'string') {
               return { [keys]: mockStorage[keys] };
             }
             return { ...mockStorage };
-          },
-          set: async (items) => {
+          }),
+          set: vi.fn(async (items) => {
             Object.assign(mockStorage, items);
-          },
+          }),
         },
       },
     };
+  });
+
+  it('correctly verifies extension context validity', () => {
+    expect(isExtensionContextValid()).toBe(true);
+
+    // When runtime ID is missing
+    delete globalThis.chrome.runtime.id;
+    expect(isExtensionContextValid()).toBe(false);
+
+    // When runtime is undefined
+    delete globalThis.chrome.runtime;
+    delete globalThis.chrome.storage;
+    expect(isExtensionContextValid()).toBe(false);
+
+    // When chrome global is undefined
+    const originalChrome = globalThis.chrome;
+    delete globalThis.chrome;
+    expect(isExtensionContextValid()).toBe(false);
+    globalThis.chrome = originalChrome;
   });
 
   it('returns default settings when storage is empty', async () => {
@@ -47,6 +70,29 @@ describe('storage.js & logger.js - Storage and Bounded Diagnostics', () => {
     expect(settings).toEqual(DEFAULT_SETTINGS);
   });
 
+  it('gracefully suppresses warnings and returns default settings on Extension context invalidated', async () => {
+    const warnSpy = vi.spyOn(console, 'warn');
+    globalThis.chrome.storage.local.get = vi.fn().mockRejectedValue(new Error('Extension context invalidated.'));
+
+    const settings = await getSettings();
+    expect(settings).toEqual(DEFAULT_SETTINGS);
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
+  });
+
+  it('bails out safely without calling storage when context is invalid', async () => {
+    delete globalThis.chrome.runtime.id;
+
+    const settings = await getSettings();
+    expect(settings).toEqual(DEFAULT_SETTINGS);
+    expect(globalThis.chrome.storage.local.get).not.toHaveBeenCalled();
+
+    const saveResult = await saveSettings({ enabled: true });
+    expect(saveResult).toBe(false);
+    expect(globalThis.chrome.storage.local.set).not.toHaveBeenCalled();
+  });
+
   it('records diagnostic logs only when diagnosticsEnabled is true', async () => {
     // When disabled (default)
     await logDiagnosticEvent('prompt_detected', 'testing');
@@ -60,6 +106,25 @@ describe('storage.js & logger.js - Storage and Bounded Diagnostics', () => {
     expect(logs.length).toBe(1);
     expect(logs[0].event).toBe('prompt_detected');
     expect(logs[0].details).toBe('first event');
+  });
+
+  it('uses in-memory cached settings to eliminate redundant storage reads in logger', async () => {
+    updateCachedSettings({ diagnosticsEnabled: true });
+
+    await logDiagnosticEvent('cached_event', 'cached_details');
+
+    const logs = await getDiagnosticLogs();
+    expect(logs.length).toBe(1);
+    expect(logs[0].event).toBe('cached_event');
+  });
+
+  it('silently ignores diagnostic logging when context is invalidated', async () => {
+    updateCachedSettings({ diagnosticsEnabled: true });
+    delete globalThis.chrome.runtime.id;
+
+    await logDiagnosticEvent('ignored_event', 'should not throw');
+
+    expect(globalThis.chrome.storage.local.get).not.toHaveBeenCalled();
   });
 
   it('enforces FIFO ring buffer strictly capped at LIMITS.MAX_DIAGNOSTICS_ENTRIES (50)', async () => {

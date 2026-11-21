@@ -65,57 +65,88 @@
   };
 
   // src/common/storage.js
+  var settingsCache = null;
+  function getCachedSettings() {
+    return settingsCache ? { ...settingsCache } : null;
+  }
+  function updateCachedSettings(settings) {
+    settingsCache = settings ? { ...settings } : null;
+  }
+  function isExtensionContextValid() {
+    if (typeof chrome === "undefined" || !chrome) {
+      return false;
+    }
+    if ("runtime" in chrome && chrome.runtime) {
+      return Boolean(chrome.runtime.id);
+    }
+    return Boolean(chrome.storage);
+  }
   async function getSettings() {
     try {
-      if (typeof chrome === "undefined" || !chrome.storage?.local) {
-        return { ...DEFAULT_SETTINGS };
+      if (!isExtensionContextValid() || !chrome.storage?.local) {
+        return settingsCache ? { ...settingsCache } : { ...DEFAULT_SETTINGS };
       }
       const result = await chrome.storage.local.get(STORAGE_KEYS.SETTINGS);
       const stored = result?.[STORAGE_KEYS.SETTINGS];
       if (!stored || typeof stored !== "object") {
+        settingsCache = { ...DEFAULT_SETTINGS };
         return { ...DEFAULT_SETTINGS };
       }
-      return {
+      const resolved = {
         enabled: typeof stored.enabled === "boolean" ? stored.enabled : DEFAULT_SETTINGS.enabled,
         youtubeEnabled: typeof stored.youtubeEnabled === "boolean" ? stored.youtubeEnabled : DEFAULT_SETTINGS.youtubeEnabled,
         youtubeMusicEnabled: typeof stored.youtubeMusicEnabled === "boolean" ? stored.youtubeMusicEnabled : DEFAULT_SETTINGS.youtubeMusicEnabled,
         diagnosticsEnabled: typeof stored.diagnosticsEnabled === "boolean" ? stored.diagnosticsEnabled : DEFAULT_SETTINGS.diagnosticsEnabled
       };
+      settingsCache = { ...resolved };
+      return resolved;
     } catch (err) {
-      console.warn("[YouTube Auto Resume] Error reading settings, falling back to defaults:", err);
-      return { ...DEFAULT_SETTINGS };
+      const isInvalidated = err instanceof Error && err.message?.includes("Extension context invalidated");
+      if (!isInvalidated) {
+        console.warn("[YouTube Auto Resume] Error reading settings, falling back to defaults:", err);
+      }
+      return settingsCache ? { ...settingsCache } : { ...DEFAULT_SETTINGS };
     }
   }
   function onSettingsChanged(callback) {
-    if (typeof chrome === "undefined" || !chrome.storage?.onChanged) {
+    if (!isExtensionContextValid() || !chrome.storage?.onChanged) {
       return () => {
       };
     }
     const listener = (changes, areaName) => {
       if (areaName === "local" && changes[STORAGE_KEYS.SETTINGS]) {
         const newValue = changes[STORAGE_KEYS.SETTINGS].newValue || DEFAULT_SETTINGS;
-        callback({
+        const updated = {
           enabled: typeof newValue.enabled === "boolean" ? newValue.enabled : DEFAULT_SETTINGS.enabled,
           youtubeEnabled: typeof newValue.youtubeEnabled === "boolean" ? newValue.youtubeEnabled : DEFAULT_SETTINGS.youtubeEnabled,
           youtubeMusicEnabled: typeof newValue.youtubeMusicEnabled === "boolean" ? newValue.youtubeMusicEnabled : DEFAULT_SETTINGS.youtubeMusicEnabled,
           diagnosticsEnabled: typeof newValue.diagnosticsEnabled === "boolean" ? newValue.diagnosticsEnabled : DEFAULT_SETTINGS.diagnosticsEnabled
-        });
+        };
+        settingsCache = { ...updated };
+        callback(updated);
       }
     };
     chrome.storage.onChanged.addListener(listener);
-    return () => chrome.storage.onChanged.removeListener(listener);
+    return () => {
+      if (isExtensionContextValid() && chrome.storage?.onChanged) {
+        chrome.storage.onChanged.removeListener(listener);
+      }
+    };
   }
 
   // src/common/logger.js
   var logQueue = Promise.resolve();
   async function logDiagnosticEvent(event, details = "") {
+    if (!isExtensionContextValid()) {
+      return Promise.resolve();
+    }
     logQueue = logQueue.then(async () => {
       try {
-        const settings = await getSettings();
-        if (!settings.diagnosticsEnabled) {
+        if (!isExtensionContextValid() || !chrome.storage?.local) {
           return;
         }
-        if (typeof chrome === "undefined" || !chrome.storage?.local) {
+        const settings = getCachedSettings() || await getSettings();
+        if (!settings?.diagnosticsEnabled) {
           return;
         }
         const result = await chrome.storage.local.get(STORAGE_KEYS.DIAGNOSTICS);
@@ -128,7 +159,10 @@
         const updatedLogs = [...existingLogs, newEntry].slice(-LIMITS.MAX_DIAGNOSTICS_ENTRIES);
         await chrome.storage.local.set({ [STORAGE_KEYS.DIAGNOSTICS]: updatedLogs });
       } catch (err) {
-        console.warn("[YouTube Auto Resume] Diagnostics log failed:", err);
+        const isInvalidated = err instanceof Error && err.message?.includes("Extension context invalidated");
+        if (!isInvalidated) {
+          console.warn("[YouTube Auto Resume] Diagnostics log failed:", err);
+        }
       }
     });
     return logQueue;
@@ -658,20 +692,29 @@
       this.isProcessing = false;
       this.isInitialized = false;
       this.visibilityListener = null;
+      this.navFinishListener = null;
+      this.navDataListener = null;
     }
     /**
      * Initializes settings, listeners, and starts DOM observation.
      */
     async init() {
+      if (!isExtensionContextValid()) return;
       if (this.isInitialized) return;
       this.isInitialized = true;
       this.settings = await getSettings();
+      updateCachedSettings(this.settings);
       await logDiagnosticEvent(DIAGNOSTIC_EVENTS.CONTENT_SCRIPT_INITIALIZED, {
         version: "1.0.1",
         enabled: this.settings?.enabled
       });
       onSettingsChanged(async (newSettings) => {
+        if (!isExtensionContextValid()) {
+          this.destroy();
+          return;
+        }
         this.settings = newSettings;
+        updateCachedSettings(newSettings);
         await logDiagnosticEvent(DIAGNOSTIC_EVENTS.SETTINGS_UPDATED, {
           enabled: newSettings.enabled,
           youtubeEnabled: newSettings.youtubeEnabled
@@ -690,6 +733,10 @@
     setupVisibilityTracking() {
       if (typeof document === "undefined") return;
       this.visibilityListener = () => {
+        if (!isExtensionContextValid()) {
+          this.destroy();
+          return;
+        }
         const isHidden = document.hidden || document.visibilityState === "hidden";
         logDiagnosticEvent(
           isHidden ? DIAGNOSTIC_EVENTS.WINDOW_OCCLUDED : DIAGNOSTIC_EVENTS.WINDOW_RESTORED,
@@ -703,14 +750,24 @@
      */
     setupNavigationListeners() {
       if (typeof window === "undefined") return;
-      window.addEventListener("yt-navigate-finish", () => {
+      this.navFinishListener = () => {
+        if (!isExtensionContextValid()) {
+          this.destroy();
+          return;
+        }
         this.deduplicator.reset();
         logDiagnosticEvent(DIAGNOSTIC_EVENTS.NAVIGATION_RESET, { event: "yt-navigate-finish" });
-      });
-      window.addEventListener("yt-page-data-updated", () => {
+      };
+      this.navDataListener = () => {
+        if (!isExtensionContextValid()) {
+          this.destroy();
+          return;
+        }
         this.deduplicator.reset();
         logDiagnosticEvent(DIAGNOSTIC_EVENTS.NAVIGATION_RESET, { event: "yt-page-data-updated" });
-      });
+      };
+      window.addEventListener("yt-navigate-finish", this.navFinishListener);
+      window.addEventListener("yt-page-data-updated", this.navDataListener);
     }
     /**
      * Scopes observation to <ytd-popup-container>.
@@ -786,6 +843,10 @@
      * @param {MutationRecord[]} [mutations=[]]
      */
     handleMutations(popupContainer, mutations = []) {
+      if (!isExtensionContextValid()) {
+        this.destroy();
+        return;
+      }
       if (!this.checkContainerHealth(popupContainer)) return;
       const now = Date.now();
       if (!this.debounceStartTime) {
@@ -875,6 +936,10 @@
      * @param {Element} popupContainer
      */
     async evaluatePrompt(popupContainer) {
+      if (!isExtensionContextValid()) {
+        this.destroy();
+        return;
+      }
       if (this.isProcessing) return;
       if (!this.checkContainerHealth(popupContainer)) return;
       const detection = detectInactivityPrompt(popupContainer);
@@ -1016,6 +1081,14 @@
         document.removeEventListener("visibilitychange", this.visibilityListener);
         this.visibilityListener = null;
       }
+      if (this.navFinishListener && typeof window !== "undefined") {
+        window.removeEventListener("yt-navigate-finish", this.navFinishListener);
+        this.navFinishListener = null;
+      }
+      if (this.navDataListener && typeof window !== "undefined") {
+        window.removeEventListener("yt-page-data-updated", this.navDataListener);
+        this.navDataListener = null;
+      }
       this.deduplicator.reset();
       this.isProcessing = false;
       this.debounceStartTime = 0;
@@ -1023,7 +1096,7 @@
     }
   };
   if (typeof window !== "undefined" && typeof document !== "undefined") {
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+    if (isExtensionContextValid() && chrome.storage?.local) {
       console.log("[YouTube Auto Resume] Content script initialized v1.0.1");
       const coordinator = new YouTubeAutoResumeCoordinator();
       coordinator.init();

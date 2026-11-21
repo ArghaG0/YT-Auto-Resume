@@ -34,6 +34,7 @@ describe('options.js - Settings & Diagnostics Console', () => {
         },
       },
       runtime: {
+        id: 'mock-options-id',
         getManifest: () => ({ version: '1.0.0' }),
       },
     };

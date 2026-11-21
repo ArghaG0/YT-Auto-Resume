@@ -42,6 +42,7 @@ describe('popup.js - Toolbar Popup Logic & Enhanced Status UI', () => {
         }),
       },
       runtime: {
+        id: 'mock-popup-id',
         getManifest: () => ({ version: '1.0.1' }),
         openOptionsPage: vi.fn(),
       },

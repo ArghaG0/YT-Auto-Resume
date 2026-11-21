@@ -20,6 +20,9 @@ describe('content.js - YouTubeAutoResumeCoordinator (End-to-End Integration)', (
     };
 
     globalThis.chrome = {
+      runtime: {
+        id: 'mock-coordinator-id',
+      },
       storage: {
         local: {
           get: vi.fn(async (keys) => {
@@ -143,5 +146,25 @@ describe('content.js - YouTubeAutoResumeCoordinator (End-to-End Integration)', (
     expect(coordinator.isInitialized).toBe(false);
     expect(coordinator.scopedObserver).toBeNull();
     expect(coordinator.bootstrapObserver).toBeNull();
+  });
+
+  it('self-tears down cleanly when extension context is invalidated during mutation handling', async () => {
+    const popupContainer = document.createElement('ytd-popup-container');
+    document.body.appendChild(popupContainer);
+
+    await coordinator.init();
+    expect(coordinator.isInitialized).toBe(true);
+    expect(coordinator.scopedObserver).not.toBeNull();
+
+    // Simulate extension reload / invalidation: chrome.runtime.id becomes undefined
+    delete globalThis.chrome.runtime.id;
+
+    // Simulate mutation arrival on container
+    coordinator.handleMutations(popupContainer, []);
+
+    // Coordinator must have detected invalidation and invoked self-teardown
+    expect(coordinator.isInitialized).toBe(false);
+    expect(coordinator.scopedObserver).toBeNull();
+    expect(coordinator.debounceTimer).toBeNull();
   });
 });
