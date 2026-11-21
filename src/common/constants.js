@@ -44,6 +44,7 @@ export const DIAGNOSTIC_EVENTS = {
 
   // Detection & Gating
   PROMPT_DETECTED: 'prompt_detected',
+  PROMPT_CANDIDATE_NOT_VISIBLE: 'prompt_candidate_not_visible',
   PROMPT_ALREADY_HANDLED: 'prompt_already_handled',
   AMBIGUOUS_PROMPT_IGNORED: 'ambiguous_prompt_ignored',
   COOLDOWN_THROTTLED: 'cooldown_throttled',

@@ -40,6 +40,7 @@ describe('constants.js - Configuration & 100% Observability Event Schema', () =>
       'debounce_max_wait_triggered',
       // Detection & Gating
       'prompt_detected',
+      'prompt_candidate_not_visible',
       'prompt_already_handled',
       'ambiguous_prompt_ignored',
       'cooldown_throttled',

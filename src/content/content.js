@@ -454,6 +454,12 @@ export class YouTubeAutoResumeCoordinator {
       } finally {
         this.isProcessing = false;
       }
+    } else if (detection.status === 'candidate_not_visible') {
+      await logDiagnosticEvent(DIAGNOSTIC_EVENTS.PROMPT_CANDIDATE_NOT_VISIBLE, {
+        reason: detection.reason,
+        textSnippet: detection.textSnippet,
+        ...(detection.details || {}),
+      });
     } else if (detection.status === 'ambiguous') {
       await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AMBIGUOUS_PROMPT_IGNORED, {
         textSnippet: detection.textSnippet,

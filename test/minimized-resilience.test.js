@@ -368,4 +368,68 @@ describe('minimized-resilience.test.js - Minimized Window & Verification Suite',
     expect(details.reason).toContain('rejected_keyword');
     expect(details.textSnippet).toContain('skip to next video in playlist?');
   });
+
+  it('handles and resumes playback when inactivity prompt has aria-hidden="true" (no false negative)', async () => {
+    const popupContainer = document.createElement('ytd-popup-container');
+    document.body.appendChild(popupContainer);
+
+    const video = document.createElement('video');
+    Object.defineProperty(video, 'paused', { value: true, writable: true });
+    Object.defineProperty(video, 'readyState', { value: 4, writable: true });
+    document.body.appendChild(video);
+
+    await coordinator.init();
+
+    let confirmClicked = false;
+    const dialog = createMockPromptDialog(() => {
+      confirmClicked = true;
+      video.paused = false;
+      video.dispatchEvent(new Event('playing'));
+    });
+
+    // YouTube sets aria-hidden="true" on tp-yt-paper-dialog even while displayed
+    dialog.setAttribute('aria-hidden', 'true');
+    dialog.style.display = 'flex';
+
+    popupContainer.appendChild(dialog);
+
+    // Wait for debounce and async verification
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(confirmClicked).toBe(true);
+
+    const logs = await getDiagnosticLogs();
+    const clickEvent = logs.find((l) => l.event === 'continue_clicked');
+    const verifiedEvent = logs.find((l) => l.event === 'playback_verified');
+
+    expect(clickEvent).toBeDefined();
+    expect(verifiedEvent).toBeDefined();
+  });
+
+  it('logs prompt_candidate_not_visible with reason and DOM properties when dialog has display: none', async () => {
+    const popupContainer = document.createElement('ytd-popup-container');
+    document.body.appendChild(popupContainer);
+
+    await coordinator.init();
+
+    let clickCount = 0;
+    const dialog = createMockPromptDialog(() => { clickCount++; });
+    dialog.style.display = 'none';
+    dialog.setAttribute('aria-hidden', 'true');
+
+    popupContainer.appendChild(dialog);
+
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(clickCount).toBe(0);
+
+    const logs = await getDiagnosticLogs();
+    const candidateLog = logs.find((l) => l.event === 'prompt_candidate_not_visible');
+    expect(candidateLog).toBeDefined();
+    const details = JSON.parse(candidateLog.details);
+    expect(details.reason).toBe('inline_display_none');
+    expect(details.ariaHidden).toBe('true');
+    expect(details.styleDisplay).toBe('none');
+    expect(details.rejectionTarget).toBe('parent_dialog');
+  });
 });
