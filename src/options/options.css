@@ -220,6 +220,41 @@ input:checked + .slider:before {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.console-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.filter-group {
+  display: flex;
+  background: var(--border-color);
+  padding: 2px;
+  border-radius: 6px;
+  gap: 2px;
+}
+
+.btn-filter {
+  background: none;
+  border: none;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.btn-filter.active {
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 
 .console-title {
@@ -255,6 +290,29 @@ input:checked + .slider:before {
 .log-time {
   color: #94a3b8;
   white-space: nowrap;
+}
+
+.log-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.badge-ad {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+}
+
+.badge-resume {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.badge-system {
+  background: rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
 }
 
 .log-event {

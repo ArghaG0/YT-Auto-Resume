@@ -54,6 +54,8 @@ describe('popup.js - Toolbar Popup Logic & Enhanced Status UI', () => {
       <span id="status-label"></span>
       <span id="status-sublabel"></span>
       <input type="checkbox" id="master-toggle">
+      <input type="checkbox" id="auto-resume-toggle">
+      <input type="checkbox" id="auto-skip-toggle">
       <button id="open-options-btn"></button>
     `;
   });
@@ -75,6 +77,22 @@ describe('popup.js - Toolbar Popup Logic & Enhanced Status UI', () => {
 
     expect(updated.enabled).toBe(true);
     expect(chrome.storage.local.set).toHaveBeenCalled();
+  });
+
+  it('updates storage when auto-resume and auto-skip toggles are flipped', async () => {
+    const autoResumeToggle = document.getElementById('auto-resume-toggle');
+    const autoSkipToggle = document.getElementById('auto-skip-toggle');
+
+    autoResumeToggle.checked = false;
+    await saveSettings({ autoResumeEnabled: false });
+
+    autoSkipToggle.checked = false;
+    await saveSettings({ adControlEnabled: false, autoClickSkip: false });
+
+    const updated = await getSettings();
+    expect(updated.autoResumeEnabled).toBe(false);
+    expect(updated.adControlEnabled).toBe(false);
+    expect(updated.autoClickSkip).toBe(false);
   });
 
   it('detects YouTube surface on active tab', async () => {

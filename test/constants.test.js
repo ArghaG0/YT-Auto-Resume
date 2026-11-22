@@ -7,11 +7,18 @@ describe('constants.js - Configuration & 100% Observability Event Schema', () =>
     expect(SELECTORS.CONFIRM_DIALOG_RENDERER).toBe('yt-confirm-dialog-renderer');
     expect(SELECTORS.CONFIRM_BUTTON).toBe('#confirm-button');
     expect(SELECTORS.NATIVE_BUTTON).toBe('button');
+    expect(SELECTORS.MOVIE_PLAYER).toContain('#movie_player');
+    expect(SELECTORS.AD_OVERLAY).toContain('.ytp-ad-player-overlay');
+    expect(Array.isArray(SELECTORS.SKIP_BUTTONS)).toBe(true);
+    expect(SELECTORS.SKIP_BUTTONS.length).toBeGreaterThan(0);
   });
 
   it('defines correct default settings schema', () => {
     expect(DEFAULT_SETTINGS).toEqual({
       enabled: false,
+      autoResumeEnabled: true,
+      adControlEnabled: true,
+      autoClickSkip: true,
       youtubeEnabled: true,
       youtubeMusicEnabled: false,
       diagnosticsEnabled: false,
@@ -57,6 +64,17 @@ describe('constants.js - Configuration & 100% Observability Event Schema', () =>
       'retry_attempted',
       'retry_exhausted',
       'action_execution_error',
+      // Ad Control Lifecycle & Detection
+      'ad_detected',
+      'ad_ended',
+      'ad_skip_countdown_active',
+      'ad_skip_button_found',
+      'ad_skip_button_not_ready',
+      'ad_skip_clicked',
+      'ad_skip_verified',
+      'ad_skip_verify_failed',
+      'ad_ambiguous_state_ignored',
+      'ad_deduplication_throttled',
     ];
 
     for (const evt of requiredEvents) {
@@ -72,5 +90,9 @@ describe('constants.js - Configuration & 100% Observability Event Schema', () =>
     expect(LIMITS.MAX_RETRIES).toBe(3);
     expect(LIMITS.RETRY_DELAY_MS).toBe(1000);
     expect(LIMITS.SHADOW_MAX_DEPTH).toBe(4);
+    expect(LIMITS.AD_DEBOUNCE_MS).toBe(100);
+    expect(LIMITS.AD_VERIFICATION_INITIAL_DELAY_MS).toBe(500);
+    expect(LIMITS.AD_VERIFICATION_MAX_TIMEOUT_MS).toBe(1500);
+    expect(LIMITS.AD_MAX_SKIP_RETRIES).toBe(1);
   });
 });

@@ -180,7 +180,7 @@ describe('minimized-resilience.test.js - Minimized Window & Verification Suite',
       popupContainer.appendChild(dialog);
 
       // Wait for 1st attempt failure + 2nd attempt success
-      await new Promise((resolve) => setTimeout(resolve, 180));
+      await new Promise((resolve) => setTimeout(resolve, 260));
 
       expect(clickCount).toBe(2);
 

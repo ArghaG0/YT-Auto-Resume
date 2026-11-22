@@ -2,6 +2,9 @@
   // src/common/constants.js
   var DEFAULT_SETTINGS = {
     enabled: false,
+    autoResumeEnabled: true,
+    adControlEnabled: true,
+    autoClickSkip: true,
     youtubeEnabled: true,
     youtubeMusicEnabled: false,
     diagnosticsEnabled: false
@@ -35,6 +38,9 @@
       }
       const resolved = {
         enabled: typeof stored.enabled === "boolean" ? stored.enabled : DEFAULT_SETTINGS.enabled,
+        autoResumeEnabled: typeof stored.autoResumeEnabled === "boolean" ? stored.autoResumeEnabled : DEFAULT_SETTINGS.autoResumeEnabled,
+        adControlEnabled: typeof stored.adControlEnabled === "boolean" ? stored.adControlEnabled : DEFAULT_SETTINGS.adControlEnabled,
+        autoClickSkip: typeof stored.autoClickSkip === "boolean" ? stored.autoClickSkip : DEFAULT_SETTINGS.autoClickSkip,
         youtubeEnabled: typeof stored.youtubeEnabled === "boolean" ? stored.youtubeEnabled : DEFAULT_SETTINGS.youtubeEnabled,
         youtubeMusicEnabled: typeof stored.youtubeMusicEnabled === "boolean" ? stored.youtubeMusicEnabled : DEFAULT_SETTINGS.youtubeMusicEnabled,
         diagnosticsEnabled: typeof stored.diagnosticsEnabled === "boolean" ? stored.diagnosticsEnabled : DEFAULT_SETTINGS.diagnosticsEnabled
@@ -71,6 +77,8 @@
   // src/popup/popup.js
   document.addEventListener("DOMContentLoaded", async () => {
     const masterToggle = document.getElementById("master-toggle");
+    const autoResumeToggle = document.getElementById("auto-resume-toggle");
+    const autoSkipToggle = document.getElementById("auto-skip-toggle");
     const statusDot = document.getElementById("status-dot");
     const statusLabel = document.getElementById("status-label");
     const statusSublabel = document.getElementById("status-sublabel");
@@ -85,6 +93,12 @@
     const settings = await getSettings();
     if (masterToggle) {
       masterToggle.checked = settings.enabled;
+    }
+    if (autoResumeToggle) {
+      autoResumeToggle.checked = settings.autoResumeEnabled;
+    }
+    if (autoSkipToggle) {
+      autoSkipToggle.checked = settings.adControlEnabled && settings.autoClickSkip;
     }
     let isYouTubeActive = false;
     let hasBackgroundYouTubeTab = false;
@@ -110,7 +124,7 @@
         statusDot.className = "status-dot inactive";
         statusLabel.textContent = "Auto Resume Disabled";
         if (statusSublabel) {
-          statusSublabel.textContent = "Toggle switch below to enable";
+          statusSublabel.textContent = "Toggle master switch below to enable";
         }
         return;
       }
@@ -118,7 +132,7 @@
       if (isYouTubeActive) {
         statusLabel.textContent = "Active on YouTube";
         if (statusSublabel) {
-          statusSublabel.textContent = "Monitoring this tab in foreground & background";
+          statusSublabel.textContent = "Guarding prompts & ads in foreground and background";
         }
       } else if (hasBackgroundYouTubeTab) {
         statusLabel.textContent = "Auto Resume Active";
@@ -137,6 +151,13 @@
       const isChecked = e.target.checked;
       await saveSettings({ enabled: isChecked });
       updateStatusDisplay(isChecked);
+    });
+    autoResumeToggle?.addEventListener("change", async (e) => {
+      await saveSettings({ autoResumeEnabled: e.target.checked });
+    });
+    autoSkipToggle?.addEventListener("change", async (e) => {
+      const isChecked = e.target.checked;
+      await saveSettings({ adControlEnabled: isChecked, autoClickSkip: isChecked });
     });
     openOptionsBtn?.addEventListener("click", () => {
       if (typeof chrome !== "undefined" && chrome.runtime?.openOptionsPage) {

@@ -1,5 +1,6 @@
 /**
  * Options Script for YouTube Auto Resume
+ * Granular Feature Controls, Category-Filtered Diagnostics Console
  */
 
 import { getSettings, saveSettings } from '../common/storage.js';
@@ -7,6 +8,8 @@ import { getDiagnosticLogs, clearDiagnosticLogs } from '../common/logger.js';
 import { DEFAULT_SETTINGS, STORAGE_KEYS } from '../common/constants.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
+  const autoResumeToggle = document.getElementById('auto-resume-toggle');
+  const autoSkipToggle = document.getElementById('auto-skip-toggle');
   const youtubeToggle = document.getElementById('youtube-toggle');
   const diagnosticsToggle = document.getElementById('diagnostics-toggle');
   const diagnosticsContainer = document.getElementById('diagnostics-console-container');
@@ -16,6 +19,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const clearLogsBtn = document.getElementById('clear-logs-btn');
   const resetDefaultsBtn = document.getElementById('reset-defaults-btn');
   const versionText = document.getElementById('version-text');
+  const filterBtns = document.querySelectorAll('.btn-filter');
+
+  let activeFilter = 'all';
 
   // Load version from manifest
   if (typeof chrome !== 'undefined' && chrome.runtime?.getManifest) {
@@ -27,6 +33,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load initial settings
   const settings = await getSettings();
+  if (autoResumeToggle) autoResumeToggle.checked = settings.autoResumeEnabled;
+  if (autoSkipToggle) autoSkipToggle.checked = settings.adControlEnabled && settings.autoClickSkip;
   if (youtubeToggle) youtubeToggle.checked = settings.youtubeEnabled;
   if (diagnosticsToggle) diagnosticsToggle.checked = settings.diagnosticsEnabled;
 
@@ -41,6 +49,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   updateConsoleVisibility(settings.diagnosticsEnabled);
 
+  // Feature toggles
+  autoResumeToggle?.addEventListener('change', async (e) => {
+    await saveSettings({ autoResumeEnabled: e.target.checked });
+  });
+
+  autoSkipToggle?.addEventListener('change', async (e) => {
+    const isChecked = e.target.checked;
+    await saveSettings({ adControlEnabled: isChecked, autoClickSkip: isChecked });
+  });
+
   // Surface toggles
   youtubeToggle?.addEventListener('change', async (e) => {
     await saveSettings({ youtubeEnabled: e.target.checked });
@@ -52,28 +70,59 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateConsoleVisibility(isChecked);
   });
 
+  // Filter buttons listener
+  filterBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      filterBtns.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter = btn.getAttribute('data-filter') || 'all';
+      renderDiagnostics();
+    });
+  });
+
+  // Helper to determine event category
+  function getEventCategory(eventName) {
+    if (eventName.startsWith('ad_')) return 'ad';
+    if (eventName.includes('prompt') || eventName.includes('continue') || eventName.includes('playback') || eventName.includes('retry')) {
+      return 'resume';
+    }
+    return 'system';
+  }
+
   // Render logs in monospace console
   async function renderDiagnostics() {
     if (!consoleBox) return;
 
-    const logs = await getDiagnosticLogs();
+    const allLogs = await getDiagnosticLogs();
+
+    const filteredLogs = allLogs.filter((log) => {
+      if (activeFilter === 'all') return true;
+      const cat = getEventCategory(log.event);
+      return cat === activeFilter;
+    });
+
     if (logCountText) {
-      logCountText.textContent = `Log History (${logs.length} / 50)`;
+      logCountText.textContent = `Log History (${filteredLogs.length} / ${allLogs.length})`;
     }
 
-    if (logs.length === 0) {
-      consoleBox.innerHTML = '<p class="empty-logs">No diagnostic events recorded yet.</p>';
+    if (filteredLogs.length === 0) {
+      consoleBox.innerHTML = '<p class="empty-logs">No diagnostic events matching this filter.</p>';
       return;
     }
 
     consoleBox.innerHTML = '';
-    for (const log of logs) {
+    for (const log of filteredLogs) {
       const row = document.createElement('div');
       row.className = 'log-entry';
 
       const timeStr = new Date(log.timestamp).toLocaleTimeString();
+      const cat = getEventCategory(log.event);
+      const badgeClass = cat === 'ad' ? 'badge-ad' : cat === 'resume' ? 'badge-resume' : 'badge-system';
+      const badgeText = cat === 'ad' ? '[AD]' : cat === 'resume' ? '[RESUME]' : '[SYS]';
+
       row.innerHTML = `
         <span class="log-time">[${timeStr}]</span>
+        <span class="log-badge ${badgeClass}">${badgeText}</span>
         <span class="log-event ${log.event}">${log.event}</span>
         <span class="log-details">${log.details ? `— ${log.details}` : ''}</span>
       `;
@@ -111,6 +160,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const confirmed = window.confirm('Reset all YouTube Auto Resume settings to default?');
     if (confirmed) {
       await saveSettings(DEFAULT_SETTINGS);
+      if (autoResumeToggle) autoResumeToggle.checked = DEFAULT_SETTINGS.autoResumeEnabled;
+      if (autoSkipToggle) autoSkipToggle.checked = DEFAULT_SETTINGS.adControlEnabled && DEFAULT_SETTINGS.autoClickSkip;
       if (youtubeToggle) youtubeToggle.checked = DEFAULT_SETTINGS.youtubeEnabled;
       if (diagnosticsToggle) diagnosticsToggle.checked = DEFAULT_SETTINGS.diagnosticsEnabled;
       updateConsoleVisibility(DEFAULT_SETTINGS.diagnosticsEnabled);

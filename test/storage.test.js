@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { getSettings, saveSettings, isExtensionContextValid } from '../src/common/storage.js';
+import { getSettings, saveSettings, isExtensionContextValid, isFeatureEffective } from '../src/common/storage.js';
 import { logDiagnosticEvent, getDiagnosticLogs, clearDiagnosticLogs, updateCachedSettings } from '../src/common/logger.js';
 import { DEFAULT_SETTINGS, LIMITS } from '../src/common/constants.js';
 
@@ -151,5 +151,51 @@ describe('storage.js & logger.js - Storage and Bounded Diagnostics', () => {
     await clearDiagnosticLogs();
     logs = await getDiagnosticLogs();
     expect(logs.length).toBe(0);
+  });
+
+  it('correctly evaluates effective feature states via isFeatureEffective', () => {
+    const baseSettings = {
+      enabled: true,
+      autoResumeEnabled: true,
+      adControlEnabled: true,
+      autoClickSkip: true,
+      youtubeEnabled: true,
+      youtubeMusicEnabled: false,
+      diagnosticsEnabled: false,
+    };
+
+    // Both features active on youtube.com
+    expect(isFeatureEffective(baseSettings, 'autoResume', 'www.youtube.com')).toBe(true);
+    expect(isFeatureEffective(baseSettings, 'adControl', 'www.youtube.com')).toBe(true);
+
+    // Disabled when master toggle is off
+    expect(isFeatureEffective({ ...baseSettings, enabled: false }, 'autoResume', 'www.youtube.com')).toBe(false);
+    expect(isFeatureEffective({ ...baseSettings, enabled: false }, 'adControl', 'www.youtube.com')).toBe(false);
+
+    // Sub-feature toggle off
+    expect(isFeatureEffective({ ...baseSettings, autoResumeEnabled: false }, 'autoResume', 'www.youtube.com')).toBe(false);
+    expect(isFeatureEffective({ ...baseSettings, adControlEnabled: false }, 'adControl', 'www.youtube.com')).toBe(false);
+    expect(isFeatureEffective({ ...baseSettings, autoClickSkip: false }, 'adControl', 'www.youtube.com')).toBe(false);
+
+    // Domain restrictions
+    expect(isFeatureEffective(baseSettings, 'autoResume', 'music.youtube.com')).toBe(false);
+    expect(isFeatureEffective({ ...baseSettings, youtubeMusicEnabled: true }, 'autoResume', 'music.youtube.com')).toBe(true);
+    expect(isFeatureEffective(baseSettings, 'autoResume', 'example.com')).toBe(false);
+  });
+
+  it('provides backward-compatible defaults when stored settings lack new ad control flags', async () => {
+    // Simulate legacy v1.0.1 settings object without ad control keys
+    mockStorage['yt_auto_resume_settings'] = {
+      enabled: true,
+      youtubeEnabled: true,
+      youtubeMusicEnabled: false,
+      diagnosticsEnabled: false,
+    };
+
+    const settings = await getSettings();
+    expect(settings.enabled).toBe(true);
+    expect(settings.autoResumeEnabled).toBe(true);
+    expect(settings.adControlEnabled).toBe(true);
+    expect(settings.autoClickSkip).toBe(true);
   });
 });

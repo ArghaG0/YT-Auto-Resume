@@ -59,6 +59,9 @@ export async function getSettings() {
 
     const resolved = {
       enabled: typeof stored.enabled === 'boolean' ? stored.enabled : DEFAULT_SETTINGS.enabled,
+      autoResumeEnabled: typeof stored.autoResumeEnabled === 'boolean' ? stored.autoResumeEnabled : DEFAULT_SETTINGS.autoResumeEnabled,
+      adControlEnabled: typeof stored.adControlEnabled === 'boolean' ? stored.adControlEnabled : DEFAULT_SETTINGS.adControlEnabled,
+      autoClickSkip: typeof stored.autoClickSkip === 'boolean' ? stored.autoClickSkip : DEFAULT_SETTINGS.autoClickSkip,
       youtubeEnabled: typeof stored.youtubeEnabled === 'boolean' ? stored.youtubeEnabled : DEFAULT_SETTINGS.youtubeEnabled,
       youtubeMusicEnabled: typeof stored.youtubeMusicEnabled === 'boolean' ? stored.youtubeMusicEnabled : DEFAULT_SETTINGS.youtubeMusicEnabled,
       diagnosticsEnabled: typeof stored.diagnosticsEnabled === 'boolean' ? stored.diagnosticsEnabled : DEFAULT_SETTINGS.diagnosticsEnabled,
@@ -115,6 +118,9 @@ export function onSettingsChanged(callback) {
       const newValue = changes[STORAGE_KEYS.SETTINGS].newValue || DEFAULT_SETTINGS;
       const updated = {
         enabled: typeof newValue.enabled === 'boolean' ? newValue.enabled : DEFAULT_SETTINGS.enabled,
+        autoResumeEnabled: typeof newValue.autoResumeEnabled === 'boolean' ? newValue.autoResumeEnabled : DEFAULT_SETTINGS.autoResumeEnabled,
+        adControlEnabled: typeof newValue.adControlEnabled === 'boolean' ? newValue.adControlEnabled : DEFAULT_SETTINGS.adControlEnabled,
+        autoClickSkip: typeof newValue.autoClickSkip === 'boolean' ? newValue.autoClickSkip : DEFAULT_SETTINGS.autoClickSkip,
         youtubeEnabled: typeof newValue.youtubeEnabled === 'boolean' ? newValue.youtubeEnabled : DEFAULT_SETTINGS.youtubeEnabled,
         youtubeMusicEnabled: typeof newValue.youtubeMusicEnabled === 'boolean' ? newValue.youtubeMusicEnabled : DEFAULT_SETTINGS.youtubeMusicEnabled,
         diagnosticsEnabled: typeof newValue.diagnosticsEnabled === 'boolean' ? newValue.diagnosticsEnabled : DEFAULT_SETTINGS.diagnosticsEnabled,
@@ -130,4 +136,34 @@ export function onSettingsChanged(callback) {
       chrome.storage.onChanged.removeListener(listener);
     }
   };
+}
+
+/**
+ * Evaluates whether a specific feature is effectively active given current settings and domain.
+ * @param {typeof DEFAULT_SETTINGS} settings
+ * @param {'autoResume'|'adControl'} feature
+ * @param {string} [domain]
+ * @returns {boolean}
+ */
+export function isFeatureEffective(settings, feature, domain = typeof window !== 'undefined' ? window.location?.hostname || '' : '') {
+  if (!settings || !settings.enabled) {
+    return false;
+  }
+
+  const isTestOrLocal = !domain || domain === 'localhost' || domain === '127.0.0.1';
+  const isYouTube = isTestOrLocal || (domain.includes('youtube.com') && !domain.includes('music.youtube.com'));
+  const isYouTubeMusic = domain.includes('music.youtube.com');
+
+  const domainAllowed = (isYouTube && settings.youtubeEnabled) || (isYouTubeMusic && settings.youtubeMusicEnabled);
+  if (!domainAllowed) {
+    return false;
+  }
+
+  if (feature === 'autoResume') {
+    return Boolean(settings.autoResumeEnabled);
+  }
+  if (feature === 'adControl') {
+    return Boolean(settings.adControlEnabled && settings.autoClickSkip);
+  }
+  return false;
 }

@@ -20,13 +20,40 @@
     </header>
 
     <main class="content">
-      <!-- Card 1: Surfaces -->
+      <!-- Card 1: Features & Controls -->
+      <section class="card">
+        <h2 class="card-title">Automation Features</h2>
+        
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="auto-resume-toggle" class="setting-label">Inactivity Auto-Resume</label>
+            <p class="setting-desc">Automatically confirms "Video paused. Continue watching?" prompts without interrupting intentional pauses.</p>
+          </div>
+          <label class="switch" for="auto-resume-toggle">
+            <input type="checkbox" id="auto-resume-toggle" role="switch">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="setting-item">
+          <div class="setting-info">
+            <label for="auto-skip-toggle" class="setting-label">Auto Skip Ads</label>
+            <p class="setting-desc">Automatically clicks enabled "Skip ad" buttons. Complies strictly with YouTube policies without request blocking.</p>
+          </div>
+          <label class="switch" for="auto-skip-toggle">
+            <input type="checkbox" id="auto-skip-toggle" role="switch">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Card 2: Surfaces -->
       <section class="card">
         <h2 class="card-title">Supported Surfaces</h2>
         <div class="setting-item">
           <div class="setting-info">
             <label for="youtube-toggle" class="setting-label">YouTube (www.youtube.com)</label>
-            <p class="setting-desc">Automatically resume playback when the inactivity prompt appears on YouTube desktop.</p>
+            <p class="setting-desc">Enable automation on standard YouTube desktop.</p>
           </div>
           <label class="switch" for="youtube-toggle">
             <input type="checkbox" id="youtube-toggle" role="switch">
@@ -49,7 +76,7 @@
         </div>
       </section>
 
-      <!-- Card 2: Diagnostics Console -->
+      <!-- Card 3: Diagnostics Console -->
       <section class="card">
         <h2 class="card-title">Diagnostics & Event Logging</h2>
         <div class="setting-item">
@@ -66,7 +93,14 @@
         <!-- Log Console Container -->
         <div class="diagnostics-console-container" id="diagnostics-console-container" style="display: none;">
           <div class="console-header">
-            <span class="console-title" id="log-count-text">Log History (0 / 50)</span>
+            <div class="console-title-group">
+              <span class="console-title" id="log-count-text">Log History (0 / 50)</span>
+              <div class="filter-group">
+                <button type="button" class="btn-filter active" data-filter="all" id="filter-all-btn">All</button>
+                <button type="button" class="btn-filter" data-filter="resume" id="filter-resume-btn">Inactivity</button>
+                <button type="button" class="btn-filter" data-filter="ad" id="filter-ad-btn">Ad Control</button>
+              </div>
+            </div>
             <div class="console-actions">
               <button type="button" class="btn btn-secondary" id="copy-logs-btn">Copy Logs</button>
               <button type="button" class="btn btn-danger" id="clear-logs-btn">Clear Logs</button>
@@ -79,7 +113,7 @@
         </div>
       </section>
 
-      <!-- Card 3: Setup & Background Tips -->
+      <!-- Card 4: Setup & Background Tips -->
       <section class="card">
         <h2 class="card-title">Background Playback & Updates</h2>
         <div class="tips-grid">
@@ -98,7 +132,7 @@
         </div>
       </section>
 
-      <!-- Card 4: Reset -->
+      <!-- Card 5: Reset -->
       <section class="card danger-card">
         <div class="setting-item">
           <div class="setting-info">

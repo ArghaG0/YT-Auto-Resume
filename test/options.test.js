@@ -41,6 +41,8 @@ describe('options.js - Settings & Diagnostics Console', () => {
 
     document.body.innerHTML = `
       <span id="version-text">v1.0.0</span>
+      <input type="checkbox" id="auto-resume-toggle" checked>
+      <input type="checkbox" id="auto-skip-toggle" checked>
       <input type="checkbox" id="youtube-toggle" checked>
       <input type="checkbox" id="diagnostics-toggle" checked>
       <div id="diagnostics-console-container" style="display: flex;"></div>
@@ -50,6 +52,15 @@ describe('options.js - Settings & Diagnostics Console', () => {
       <button id="clear-logs-btn">Clear Logs</button>
       <button id="reset-defaults-btn">Reset All</button>
     `;
+  });
+
+  it('updates feature toggles independently', async () => {
+    await saveSettings({ autoResumeEnabled: false, autoClickSkip: false });
+    const settings = await getSettings();
+
+    expect(settings.autoResumeEnabled).toBe(false);
+    expect(settings.autoClickSkip).toBe(false);
+    expect(settings.enabled).toBe(true);
   });
 
   it('updates surface settings independently', async () => {

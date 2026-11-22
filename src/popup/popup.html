@@ -26,18 +26,45 @@
       </div>
     </div>
 
-    <div class="control-section">
+    <!-- Master Switch -->
+    <div class="control-section master-section">
       <div class="toggle-row">
-        <span class="toggle-label" id="master-toggle-label">Enable Auto Resume</span>
+        <span class="toggle-label font-bold" id="master-toggle-label">Master Enable</span>
         <label class="switch" for="master-toggle">
           <input type="checkbox" id="master-toggle" role="switch" aria-labelledby="master-toggle-label">
           <span class="slider"></span>
         </label>
       </div>
-      <p class="description">
-        Automatically resumes playback when YouTube pauses for inactivity. User pauses are always respected.
-      </p>
     </div>
+
+    <!-- Feature Switches -->
+    <div class="features-section">
+      <div class="feature-item">
+        <div class="feature-info">
+          <span class="feature-title">Inactivity Auto-Resume</span>
+          <p class="feature-desc">Resumes "Video paused. Continue watching?"</p>
+        </div>
+        <label class="switch switch-sm" for="auto-resume-toggle">
+          <input type="checkbox" id="auto-resume-toggle" role="switch" aria-label="Enable Inactivity Auto Resume">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="feature-item">
+        <div class="feature-info">
+          <span class="feature-title">Auto Skip Ads</span>
+          <p class="feature-desc">Clicks "Skip ad" as soon as eligible</p>
+        </div>
+        <label class="switch switch-sm" for="auto-skip-toggle">
+          <input type="checkbox" id="auto-skip-toggle" role="switch" aria-label="Enable Auto Skip Ads">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <p class="compliance-note">
+      Clicks visible skip controls without blocking requests or violating YouTube policies.
+    </p>
 
     <footer class="footer">
       <button type="button" class="footer-btn" id="open-options-btn">

@@ -4,11 +4,15 @@
  */
 
 import { SELECTORS, DIAGNOSTIC_EVENTS, LIMITS } from '../common/constants.js';
-import { getSettings, onSettingsChanged, isExtensionContextValid } from '../common/storage.js';
+import { getSettings, onSettingsChanged, isExtensionContextValid, isFeatureEffective } from '../common/storage.js';
 import { logDiagnosticEvent, updateCachedSettings } from '../common/logger.js';
 import { detectInactivityPrompt, isElementVisible } from './detector.js';
 import { findContinueButton, dispatchContinueAction } from './actions.js';
 import { PromptDeduplicator } from './deduplicator.js';
+import { detectAdState, findSkipButton } from './ad-detector.js';
+import { AdLifecycleStateMachine, AD_STATES } from './ad-state-machine.js';
+import { AdUnitDeduplicator } from './ad-deduplicator.js';
+import { executeSkipAction, verifySkipTransition } from './ad-actions.js';
 
 /**
  * Captures comprehensive video player telemetry for structured diagnostics.
@@ -56,6 +60,16 @@ export class YouTubeAutoResumeCoordinator {
     this.visibilityListener = null;
     this.navFinishListener = null;
     this.navDataListener = null;
+
+    // Ad Control Engine properties
+    this.adFsm = new AdLifecycleStateMachine();
+    this.adDeduplicator = new AdUnitDeduplicator();
+    this.playerObserver = null; // Tier 1 observer (watching #movie_player class only)
+    this.adModuleObserver = null; // Tier 2 observer (watching ad overlay only during ads)
+    this.playerBootstrapObserver = null;
+    this.adDebounceTimer = null;
+    this.isAdProcessing = false;
+    this.lastLoggedAdUnitId = null;
   }
 
   /**
@@ -83,10 +97,16 @@ export class YouTubeAutoResumeCoordinator {
       updateCachedSettings(newSettings);
       await logDiagnosticEvent(DIAGNOSTIC_EVENTS.SETTINGS_UPDATED, {
         enabled: newSettings.enabled,
+        autoResumeEnabled: newSettings.autoResumeEnabled,
+        adControlEnabled: newSettings.adControlEnabled,
+        autoClickSkip: newSettings.autoClickSkip,
         youtubeEnabled: newSettings.youtubeEnabled,
       });
       if (!this.settings.enabled) {
         this.deduplicator.reset();
+        this.adDeduplicator.reset();
+        this.adFsm.reset();
+        this.teardownTier2Observer();
       }
     });
 
@@ -98,6 +118,9 @@ export class YouTubeAutoResumeCoordinator {
 
     // Start observing DOM for inactivity prompts
     this.startObservation();
+
+    // Start observing #movie_player for advertisements (Two-Tier Scoped Observer)
+    this.startPlayerObservation();
   }
 
   /**
@@ -133,6 +156,10 @@ export class YouTubeAutoResumeCoordinator {
         return;
       }
       this.deduplicator.reset();
+      this.adDeduplicator.reset();
+      this.adFsm.reset();
+      this.teardownTier2Observer();
+      this.lastLoggedAdUnitId = null;
       logDiagnosticEvent(DIAGNOSTIC_EVENTS.NAVIGATION_RESET, { event: 'yt-navigate-finish' });
     };
 
@@ -142,6 +169,10 @@ export class YouTubeAutoResumeCoordinator {
         return;
       }
       this.deduplicator.reset();
+      this.adDeduplicator.reset();
+      this.adFsm.reset();
+      this.teardownTier2Observer();
+      this.lastLoggedAdUnitId = null;
       logDiagnosticEvent(DIAGNOSTIC_EVENTS.NAVIGATION_RESET, { event: 'yt-page-data-updated' });
     };
 
@@ -361,11 +392,8 @@ export class YouTubeAutoResumeCoordinator {
     const detection = detectInactivityPrompt(popupContainer);
 
     if (detection.status === 'confirmed' && detection.promptElement) {
-      if (!this.settings || !this.settings.enabled) {
+      if (!isFeatureEffective(this.settings, 'autoResume')) {
         await logDiagnosticEvent(DIAGNOSTIC_EVENTS.EVALUATION_SKIPPED_DISABLED);
-        return;
-      }
-      if (!this.settings.youtubeEnabled) {
         return;
       }
 
@@ -501,6 +529,287 @@ export class YouTubeAutoResumeCoordinator {
   }
 
   /**
+   * Tier 1 Observation: Scopes class observation strictly to #movie_player.
+   * Generates 0 subtree mutations during ordinary video playback.
+   */
+  startPlayerObservation() {
+    if (typeof document === 'undefined') return;
+
+    const player = document.querySelector(SELECTORS.MOVIE_PLAYER);
+    if (player && player.isConnected) {
+      this.attachPlayerObserver(player);
+      return;
+    }
+
+    const targetRoot = document.body || document.documentElement;
+    if (!targetRoot) return;
+
+    if (this.playerBootstrapObserver) {
+      this.playerBootstrapObserver.disconnect();
+    }
+
+    this.playerBootstrapObserver = new MutationObserver(() => {
+      const p = document.querySelector(SELECTORS.MOVIE_PLAYER);
+      if (p && p.isConnected) {
+        this.playerBootstrapObserver?.disconnect();
+        this.playerBootstrapObserver = null;
+        this.attachPlayerObserver(p);
+      }
+    });
+
+    this.playerBootstrapObserver.observe(targetRoot, {
+      childList: true,
+      subtree: true,
+    });
+  }
+
+  /**
+   * Attaches Tier 1 observer strictly watching class mutations on the player.
+   * @param {Element} player
+   */
+  attachPlayerObserver(player) {
+    if (this.playerObserver) {
+      this.playerObserver.disconnect();
+    }
+
+    this.playerObserver = new MutationObserver(() => {
+      if (!isExtensionContextValid()) {
+        this.destroy();
+        return;
+      }
+      const hasAdClass = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
+      if (hasAdClass) {
+        this.onAdStarted(player);
+      } else {
+        this.onAdEnded();
+      }
+    });
+
+    // Tier 1 config: ONLY class attribute changes, 0 childList or subtree mutations
+    this.playerObserver.observe(player, {
+      attributes: true,
+      attributeFilter: ['class'],
+    });
+
+    // Run initial scan in case player is already showing an ad
+    const hasAdClass = player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting');
+    if (hasAdClass) {
+      this.onAdStarted(player);
+    }
+  }
+
+  /**
+   * Invoked when #movie_player enters ad playback state.
+   * Attaches Tier 2 observer to the ad overlay and evaluates skip button.
+   * @param {Element} player
+   */
+  onAdStarted(player) {
+    if (!isExtensionContextValid()) {
+      this.destroy();
+      return;
+    }
+
+    if (this.adFsm.getState() === AD_STATES.IDLE) {
+      this.adFsm.transition(AD_STATES.AD_DETECTED);
+    }
+
+    // Attach Tier 2 observer to ad overlay if not already attached
+    if (!this.adModuleObserver) {
+      const overlay = player.querySelector(SELECTORS.AD_OVERLAY) || player;
+      this.attachTier2Observer(overlay);
+    }
+
+    this.scheduleAdEvaluation();
+  }
+
+  /**
+   * Attaches Tier 2 observer scoped strictly to the ad overlay module.
+   * @param {Element} overlay
+   */
+  attachTier2Observer(overlay) {
+    if (this.adModuleObserver) {
+      this.adModuleObserver.disconnect();
+    }
+
+    this.adModuleObserver = new MutationObserver(() => {
+      this.scheduleAdEvaluation();
+    });
+
+    this.adModuleObserver.observe(overlay, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'disabled', 'aria-disabled'],
+    });
+  }
+
+  /**
+   * Tears down Tier 2 observer and clears timers when an ad finishes or resets.
+   */
+  teardownTier2Observer() {
+    if (this.adModuleObserver) {
+      this.adModuleObserver.disconnect();
+      this.adModuleObserver = null;
+    }
+    if (this.adDebounceTimer) {
+      clearTimeout(this.adDebounceTimer);
+      this.adDebounceTimer = null;
+    }
+  }
+
+  /**
+   * Invoked when #movie_player exits ad playback state.
+   */
+  onAdEnded() {
+    this.teardownTier2Observer();
+    if (this.adFsm.getState() !== AD_STATES.IDLE) {
+      this.adFsm.transition(AD_STATES.AD_ENDED);
+      this.adFsm.transition(AD_STATES.IDLE);
+    }
+    this.lastLoggedAdUnitId = null;
+  }
+
+  /**
+   * Debounces ad skip evaluation (100ms) to allow DOM controls to settle.
+   */
+  scheduleAdEvaluation() {
+    if (this.adDebounceTimer) {
+      clearTimeout(this.adDebounceTimer);
+    }
+    this.adDebounceTimer = setTimeout(() => {
+      this.adDebounceTimer = null;
+      this.evaluateAdSkip();
+    }, LIMITS.AD_DEBOUNCE_MS);
+  }
+
+  /**
+   * Executes the 6-stage Ad Skip Decision Pipeline:
+   * 1. Ad Detection -> 2. FSM Update -> 3. Eligibility Resolver -> 4. Deduplication Guard -> 5. Skip Action -> 6. Transition Verifier
+   */
+  async evaluateAdSkip() {
+    if (!isExtensionContextValid()) {
+      this.destroy();
+      return;
+    }
+    if (this.isAdProcessing) return;
+
+    // Feature gating check
+    if (!isFeatureEffective(this.settings, 'adControl')) {
+      return;
+    }
+
+    // Stage 1: Multi-signal Ad Detection
+    const detection = detectAdState();
+    if (detection.state === 'not_found') {
+      this.onAdEnded();
+      return;
+    }
+    if (detection.state === 'ambiguous') {
+      await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AD_AMBIGUOUS_STATE_IGNORED, {
+        reason: detection.reason,
+        details: detection.details,
+      });
+      return;
+    }
+
+    const { playerElement, adUnitId } = detection;
+
+    // Log AD_DETECTED once per unique ad unit
+    if (this.lastLoggedAdUnitId !== adUnitId) {
+      this.lastLoggedAdUnitId = adUnitId;
+      await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AD_DETECTED, { adUnitId });
+    }
+
+    // Stage 2: FSM Update
+    if (this.adFsm.getState() === AD_STATES.IDLE || this.adFsm.getState() === AD_STATES.SKIP_ATTEMPTED) {
+      this.adFsm.transition(AD_STATES.AD_DETECTED, { adUnitId });
+    }
+
+    // Stage 3: Eligibility Resolver (find and verify skip button)
+    const buttonResult = findSkipButton(playerElement);
+
+    if (buttonResult.countdownActive) {
+      this.adFsm.transition(AD_STATES.WAITING_FOR_SKIP, { adUnitId, secondsRemaining: buttonResult.secondsRemaining });
+      await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AD_SKIP_COUNTDOWN_ACTIVE, {
+        adUnitId,
+        secondsRemaining: buttonResult.secondsRemaining,
+      });
+      return;
+    }
+
+    if (!buttonResult.isReady || !buttonResult.button) {
+      return;
+    }
+
+    // Stage 4: Deduplication Guard
+    if (!this.adDeduplicator.canSkip(adUnitId)) {
+      if (this.adDeduplicator.isPending(adUnitId) || this.adDeduplicator.isHandled(adUnitId)) {
+        await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AD_DEDUPLICATION_THROTTLED, {
+          adUnitId,
+          status: this.adDeduplicator.isPending(adUnitId) ? 'pending' : 'handled',
+        });
+      }
+      return;
+    }
+
+    // Stage 5: Skip Action Dispatch
+    this.adFsm.transition(AD_STATES.SKIP_READY, { adUnitId, button: buttonResult.button });
+    this.adDeduplicator.markPending(adUnitId);
+    this.adFsm.transition(AD_STATES.SKIP_ATTEMPTED, { adUnitId });
+    this.isAdProcessing = true;
+
+    try {
+      const actionResult = executeSkipAction(buttonResult.button, adUnitId, playerElement);
+      if (!actionResult.success) {
+        this.adDeduplicator.unmark(adUnitId);
+        this.adFsm.transition(AD_STATES.WAITING_FOR_SKIP);
+        return;
+      }
+
+      await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AD_SKIP_CLICKED, {
+        adUnitId,
+        selector: buttonResult.details?.selector || '.ytp-ad-skip-button',
+      });
+
+      // Stage 6: Playback Transition Verification
+      const outcome = await verifySkipTransition(
+        playerElement,
+        adUnitId,
+        LIMITS.AD_VERIFICATION_INITIAL_DELAY_MS,
+        LIMITS.AD_VERIFICATION_MAX_TIMEOUT_MS
+      );
+
+      if (outcome.verified) {
+        this.adDeduplicator.markSuccess(adUnitId);
+        this.adFsm.transition(AD_STATES.AD_ENDED, { adUnitId, durationMs: outcome.durationMs });
+        await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AD_SKIP_VERIFIED, {
+          adUnitId,
+          latencyMs: outcome.durationMs,
+          reason: outcome.reason,
+        });
+        if (outcome.reason === 'ad_class_cleared') {
+          this.onAdEnded();
+        }
+      } else {
+        // Verification failed (ad did not skip)
+        this.adDeduplicator.unmark(adUnitId);
+        this.adFsm.transition(AD_STATES.WAITING_FOR_SKIP, { adUnitId, reason: outcome.reason });
+        await logDiagnosticEvent(DIAGNOSTIC_EVENTS.AD_SKIP_VERIFY_FAILED, {
+          adUnitId,
+          durationMs: outcome.durationMs,
+          reason: outcome.reason,
+        });
+      }
+    } catch (err) {
+      this.adDeduplicator.unmark(adUnitId);
+      this.adFsm.transition(AD_STATES.WAITING_FOR_SKIP);
+      console.error('[YouTube Auto Resume] Ad skip error:', err);
+    } finally {
+      this.isAdProcessing = false;
+    }
+  }
+
+  /**
    * Disconnects all observers and resets state.
    */
   destroy() {
@@ -512,6 +821,15 @@ export class YouTubeAutoResumeCoordinator {
       this.scopedObserver.disconnect();
       this.scopedObserver = null;
     }
+    if (this.playerBootstrapObserver) {
+      this.playerBootstrapObserver.disconnect();
+      this.playerBootstrapObserver = null;
+    }
+    if (this.playerObserver) {
+      this.playerObserver.disconnect();
+      this.playerObserver = null;
+    }
+    this.teardownTier2Observer();
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
@@ -529,7 +847,10 @@ export class YouTubeAutoResumeCoordinator {
       this.navDataListener = null;
     }
     this.deduplicator.reset();
+    this.adDeduplicator.reset();
+    this.adFsm.reset();
     this.isProcessing = false;
+    this.isAdProcessing = false;
     this.debounceStartTime = 0;
     this.isInitialized = false;
   }

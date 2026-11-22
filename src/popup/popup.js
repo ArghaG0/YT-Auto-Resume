@@ -1,12 +1,14 @@
 /**
  * Popup Script for YouTube Auto Resume (v1.0.1)
- * Enhanced Two-Tier Status Display (Reassuring Background Monitoring)
+ * Enhanced Dual-Engine Status Display & Feature Toggles
  */
 
 import { getSettings, saveSettings } from '../common/storage.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
   const masterToggle = document.getElementById('master-toggle');
+  const autoResumeToggle = document.getElementById('auto-resume-toggle');
+  const autoSkipToggle = document.getElementById('auto-skip-toggle');
   const statusDot = document.getElementById('status-dot');
   const statusLabel = document.getElementById('status-label');
   const statusSublabel = document.getElementById('status-sublabel');
@@ -25,6 +27,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   const settings = await getSettings();
   if (masterToggle) {
     masterToggle.checked = settings.enabled;
+  }
+  if (autoResumeToggle) {
+    autoResumeToggle.checked = settings.autoResumeEnabled;
+  }
+  if (autoSkipToggle) {
+    autoSkipToggle.checked = settings.adControlEnabled && settings.autoClickSkip;
   }
 
   // Query tab status: check both active tab and whether YouTube is open in any background tab
@@ -62,18 +70,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       statusDot.className = 'status-dot inactive';
       statusLabel.textContent = 'Auto Resume Disabled';
       if (statusSublabel) {
-        statusSublabel.textContent = 'Toggle switch below to enable';
+        statusSublabel.textContent = 'Toggle master switch below to enable';
       }
       return;
     }
 
-    // Enabled state: Dot is always green
+    // Enabled state: Dot is green
     statusDot.className = 'status-dot active';
 
     if (isYouTubeActive) {
       statusLabel.textContent = 'Active on YouTube';
       if (statusSublabel) {
-        statusSublabel.textContent = 'Monitoring this tab in foreground & background';
+        statusSublabel.textContent = 'Guarding prompts & ads in foreground and background';
       }
     } else if (hasBackgroundYouTubeTab) {
       statusLabel.textContent = 'Auto Resume Active';
@@ -90,11 +98,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   updateStatusDisplay(settings.enabled);
 
-  // Toggle change listener
+  // Master toggle listener
   masterToggle?.addEventListener('change', async (e) => {
     const isChecked = e.target.checked;
     await saveSettings({ enabled: isChecked });
     updateStatusDisplay(isChecked);
+  });
+
+  // Feature toggles
+  autoResumeToggle?.addEventListener('change', async (e) => {
+    await saveSettings({ autoResumeEnabled: e.target.checked });
+  });
+
+  autoSkipToggle?.addEventListener('change', async (e) => {
+    const isChecked = e.target.checked;
+    await saveSettings({ adControlEnabled: isChecked, autoClickSkip: isChecked });
   });
 
   // Open Options page button

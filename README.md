@@ -4,23 +4,24 @@
 [![Version](https://img.shields.io/badge/version-1.0.1-blue.svg)](https://github.com/ArghaG0/YT-Auto-Resume/releases)
 [![Manifest V3](https://img.shields.io/badge/manifest-v3-green.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
 
-A lightweight, privacy-first **Manifest V3** browser extension that automatically confirms YouTube's inactivity interruption (*"Video paused. Continue watching?"*), keeping background music and long videos playing seamlessly without overriding intentional user pauses.
+A lightweight, privacy-first **Manifest V3** browser extension that provides uninterrupted YouTube playback:
+1. **Auto-resumes playback** when paused by inactivity interruptions (*"Video paused. Continue watching?"*).
+2. **Automates clicking "Skip ad" controls** as soon as they become visible and enabled, without blocking requests or violating YouTube policies.
 
-Distributed directly via **GitHub Releases** for Chromium-based browsers (Chrome, Edge, Brave, Opera, Vivaldi).
+Normal user pauses (spacebar, click, media keys) are always respected. Distributed directly via **GitHub Releases** for Chromium-based browsers (Chrome, Edge, Brave, Opera, Vivaldi).
 
 ---
 
 ## Features
 
-- **i18n-Resilient Detection:** Recognizes YouTube's Web Component hierarchy (`<ytd-popup-container yt-confirm-dialog-renderer>`) without depending on English-only text matching. Works across all interface languages (English, Spanish, German, Japanese, Hindi, French, etc.).
-- **Deep Shadow DOM Piercing:** Recursively traverses open Shadow Roots (`#shadow-root (open)`) across nested Web Components (`<yt-button-renderer>` $\rightarrow$ `<yt-button-shape>` $\rightarrow$ `<button>`) to activate the actual interactive button.
-- **Minimized Window Resilience (v1.0.1):** Features a bounded debounce engine (200ms upper ceiling) that counteracts Chromium's background timer clamping ($\ge 1,000\text{ ms}$) when windows are minimized or occluded on Windows, preventing timer starvation when video audio pauses.
-- **Two-Phase Playback Verification (v1.0.1):** Separates button click dispatch from playback verification. Actively monitors the `<video>` element for resumption within 1,500ms before marking the prompt handled.
-- **Controlled Retries with Concurrency Protection (v1.0.1):** Reversible deduplication leases allow up to 3 controlled retries if YouTube delays playback resumption, preventing permanent lockout.
-- **Observer Health & Disconnection Recovery (v1.0.1):** Detects detached `<ytd-popup-container>` nodes during YouTube SPA route transitions and automatically re-attaches observers to replacement containers.
-- **100% Diagnostic Observability (v1.0.1):** Captures 24 granular diagnostic event types (initialization, occlusion, button resolution, click dispatch, playback verification, retries, and error handling) in a local FIFO ring buffer.
-- **Clear Background Status UI (v1.0.1):** Toolbar popup displays reassuring green protection status whether browsing YouTube or multitasking across other background tabs.
-- **Fail-Closed Safety:** Never clicks unrelated buttons (e.g. channel unsubscribe, playlist delete, or dismiss). Normal user pauses (spacebar, click, media keys) always remain paused.
+- **Inactivity Prompt Auto-Resume:** Automatically confirms YouTube's inactivity confirmation modal across all interface languages (English, Spanish, German, Japanese, Hindi, French, etc.) via deep Shadow DOM traversal (`<ytd-popup-container yt-confirm-dialog-renderer>`).
+- **Safe & Compliant Skip Ad Automation:** Automatically clicks visible, interactable "Skip ad" buttons as soon as countdown timers elapse. Strictly adheres to store policies: zero network request blocking, zero stream interception, and fail-closed safety.
+- **Two-Tier Scoped MutationObserver (Near-Zero Overhead):** Monitors `#movie_player` class only during normal video playback (0% subtree DOM mutations). Attaches scoped observers to ad overlays strictly while advertisements are actively playing, disconnecting immediately upon completion.
+- **Ad Pod & Consecutive Ad Support:** Tracks individual ad units (e.g. "Ad 1 of 2" followed by "Ad 2 of 2") via an in-memory lifecycle state machine (FSM) without getting stuck or locked out.
+- **Minimized Window Resilience:** Features a bounded debounce engine (200ms ceiling) that counteracts Chromium's background timer clamping ($\ge 1,000\text{ ms}$) when windows are minimized or occluded on Windows.
+- **Two-Phase Playback & Skip Verification:** Distinguishes action dispatch from playback transition verification, confirming actual resumption within 1,500ms before marking actions completed.
+- **Comprehensive Local Diagnostics & Filtering:** Captures diagnostic events across both engines in a local FIFO ring buffer with category filters (`[Inactivity]`, `[Ad Control]`, `[All]`).
+- **Independent Feature Toggles:** Independent master and sub-feature switches in the toolbar popup and options page.
 - **100% Private & Local:** Zero analytics, telemetry, or external network requests. Settings and bounded diagnostics remain strictly on your local machine.
 
 ---
